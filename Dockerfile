@@ -26,4 +26,9 @@ USER user
 COPY --chown=user:user . /content/app
 RUN mv /content/app/models /content/app/models.org
 
+# Download NSFW model to persistent data location
+RUN mkdir -p /content/data/models/checkpoints && \
+    curl -L -o /content/data/models/checkpoints/onlyfornsfw118_v20.safetensors \
+    https://huggingface.co/ferdyshampo/OnlyForNsfw118/resolve/main/onlyfornsfw118_v20.safetensors
+
 CMD [ "sh", "-c", "/content/entrypoint.sh ${CMDARGS}" ]
