@@ -13,28 +13,36 @@ import requests
 from io import BytesIO
 from PIL import Image
 
+# Add app directory to path
+sys.path.insert(0, '/content/app')
+
 # Start Fooocus on init
 def start_fooocus():
     """Start Fooocus API in background"""
     print("Starting Fooocus API...")
+    
+    # Run entrypoint.sh to set up symlinks and start Fooocus
     process = subprocess.Popen(
-        ["python", "/content/app/launch.py", "--listen", "127.0.0.1", "--port", "7865"],
+        ["sh", "-c", "/content/entrypoint.sh"],
+        cwd="/content",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
     
     # Wait for API to be ready
-    max_retries = 60
+    max_retries = 120  # 2 minutes for model load
     for i in range(max_retries):
         try:
             response = requests.get("http://127.0.0.1:7865/config", timeout=5)
             if response.status_code == 200:
-                print("✓ Fooocus API is ready!")
+                print(f"✓ Fooocus API is ready! (attempt {i+1})")
                 return process
-        except:
+        except Exception as e:
+            if i % 10 == 0:
+                print(f"Waiting for Fooocus... ({i}s elapsed)")
             time.sleep(1)
     
-    raise Exception("Failed to start Fooocus API after 60 seconds")
+    raise Exception("Failed to start Fooocus API after 120 seconds")
 
 # Initialize on import
 FOOOCUS_PROCESS = None
@@ -46,14 +54,21 @@ except Exception as e:
 
 def handler(event):
     """
-    RunPod Serverless Handler for Fooocus
-    Handles both index-docker.html and app.html frontend formats
+    RunPod Serverless Handler - matches frontend expectations
     
-    Input formats (from frontends):
-    - Index-docker format: {"input": {"prompt": "...", "base_model_name": "...", "num_images": 1, ...}}
-    - App.html format: {"input": {"prompt": "...", "image_number": 1, "base_model_name": "...", ...}}
+    Input format (from frontend):
+    {
+        "input": {
+            "prompt": "A beautiful sunset",
+            "negative_prompt": "",
+            "base_model_name": "onlyfornsfw118_v20.safetensors",
+            "image_number": 1,
+            "output_format": "png",
+            "aspect_ratios_selection": "1024*1024"
+        }
+    }
     
-    Output format (to RunPod API):
+    Output format (to frontend via RunPod):
     {
         "output": {
             "images": ["base64_data1", "base64_data2"],
@@ -119,7 +134,7 @@ def handler(event):
             }
         
         result = response.json()
-        print(f"Fooocus response: {result}")
+        print(f"Fooocus response keys: {result.keys() if isinstance(result, dict) else 'list'}")
         
         # Extract image data from response
         images = []
@@ -139,7 +154,7 @@ def handler(event):
         if not images:
             return {
                 "output": {
-                    "error": "No images generated",
+                    "error": "No images generated - check Fooocus API response",
                     "progress": 0
                 }
             }
@@ -165,16 +180,31 @@ def handler(event):
         }
 
 
+# Initialize RunPod serverless handler
 if __name__ == "__main__":
-    # Test with frontend format
-    test = {
-        "input": {
-            "prompt": "A beautiful sunset, cinematic",
-            "negative_prompt": "blurry",
-            "base_model_name": "juggernautXL_v8Rundiffusion.safetensors",
-            "num_images": 1
+    try:
+        import runpod
+        
+        print("Starting RunPod serverless handler...")
+        runpod.serverless.start(
+            {
+                "handler": handler
+            }
+        )
+    except ImportError:
+        print("RunPod SDK not available. Running in test mode...")
+        # Test with sample input
+        test = {
+            "input": {
+                "prompt": "A beautiful sunset, cinematic",
+                "negative_prompt": "blurry",
+                "base_model_name": "onlyfornsfw118_v20.safetensors",
+                "image_number": 1,
+                "output_format": "png",
+                "aspect_ratios_selection": "1024*1024"
+            }
         }
-    }
-    
-    result = handler(test)
-    print(json.dumps(result, indent=2))
+        
+        result = handler(test)
+        print(json.dumps(result, indent=2))
+
