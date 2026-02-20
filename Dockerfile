@@ -31,4 +31,14 @@ RUN mkdir -p /content/data/models/checkpoints && \
     curl -L -o /content/data/models/checkpoints/onlyfornsfw118_v20.safetensors \
     https://huggingface.co/ferdyshampo/OnlyForNsfw118/resolve/main/onlyfornsfw118_v20.safetensors
 
-CMD [ "sh", "-c", "/content/entrypoint.sh ${CMDARGS}" ]
+# Install RunPod SDK for serverless handler
+RUN pip install --no-cache-dir runpod
+ 
+# Copy handler for RunPod serverless
+COPY --chown=user:user handler.py /content/
+ 
+# Set Python path to find handler module
+ENV PYTHONPATH="/content:${PYTHONPATH}"
+ 
+# Start handler for serverless (RunPod will call the handler function)
+CMD [ "python", "-u", "/content/handler.py" ]
