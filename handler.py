@@ -53,22 +53,31 @@ def start_fooocus():
     
     # Wait for FastAPI to be ready on port 7866 (240 seconds = 4 minutes)
     max_retries = 240
+    api_ready = False
     
     for i in range(max_retries):
         try:
-            # Check if FastAPI server is running on port 7866
+            # First check if API is responding
             response = requests.get("http://127.0.0.1:7866/docs", timeout=3)
             if response.status_code == 200:
-                print(f"✓ Fooocus FastAPI is ready on port 7866! (waited {i+1}s)")
-                # Wait 5 more seconds for model loading
-                time.sleep(5)
-                return process
+                # API is up, wait a bit more for model loading
+                if i > 30:  # Only after 30 seconds of attempting
+                    print(f"✓ Fooocus FastAPI is responding! (waited {i+1}s)")
+                    api_ready = True
+                    break
         except Exception as e:
-            if i % 20 == 0:
+            if i % 30 == 0:
                 print(f"Waiting for Fooocus FastAPI... ({i}s elapsed)")
             time.sleep(1)
     
-    raise Exception("Failed to start Fooocus FastAPI after 240 seconds")
+    if not api_ready:
+        raise Exception("Failed to start Fooocus FastAPI after 240 seconds")
+    
+    # Wait additional time for model file loading
+    print("Allowing time for model initialization...")
+    time.sleep(10)  # Extended wait for NSFW model loading
+    
+    return process
 
 # Initialize on import
 FOOOCUS_PROCESS = None
