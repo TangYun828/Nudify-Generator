@@ -197,11 +197,9 @@ def handler(event):
     
     Output format (to frontend via RunPod):
     {
-        "output": {
-            "images": ["base64_data1", "base64_data2"],
-            "progress": 100,
-            "message": "Generation complete"
-        }
+        "images": ["base64_data1", "base64_data2"],
+        "progress": 100,
+        "message": "Generation complete"
     }
     """
     try:
@@ -217,10 +215,8 @@ def handler(event):
         
         if not prompt:
             return {
-                "output": {
-                    "error": "Prompt is required",
-                    "progress": 0
-                }
+                "error": "Prompt is required",
+                "progress": 0
             }
         
         print(f"Generating {num_images} image(s) with prompt: {prompt}")
@@ -259,10 +255,8 @@ def handler(event):
             error_msg = f"Fooocus API error: {response.status_code} - {response.text}"
             print(error_msg)
             return {
-                "output": {
-                    "error": error_msg,
-                    "progress": 0
-                }
+                "error": error_msg,
+                "progress": 0
             }
         
         response_data = response.json()
@@ -305,10 +299,8 @@ def handler(event):
         
         if result is None:
             return {
-                "output": {
-                    "error": "No result or task_id in API response",
-                    "progress": 0
-                }
+                "error": "No result or task_id in API response",
+                "progress": 0
             }
         
         print(f"Final result type: {type(result)}, is list: {isinstance(result, list)}")
@@ -403,21 +395,17 @@ def handler(event):
         if not images:
             clean()  # Cleanup temp files
             return {
-                "output": {
-                    "error": "No images generated - check Fooocus API response",
-                    "progress": 0
-                }
+                "error": "No images generated - check Fooocus API response",
+                "progress": 0
             }
         
         # Success - cleanup temp files before returning
         clean()
         
         return {
-            "output": {
-                "images": images,
-                "progress": 100,
-                "message": f"Successfully generated {len(images)} image(s)"
-            }
+            "images": images,
+            "progress": 100,
+            "message": f"Successfully generated {len(images)} image(s)"
         }
         
     except Exception as e:
@@ -432,10 +420,8 @@ def handler(event):
             pass
         
         return {
-            "output": {
-                "error": str(e),
-                "progress": 0
-            }
+            "error": str(e),
+            "progress": 0
         }
 
 
