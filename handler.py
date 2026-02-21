@@ -89,6 +89,59 @@ except Exception as e:
     traceback.print_exc()
 
 
+def poll_for_completion(api_url, task_id, timeout=300, poll_interval=3):
+    """
+    Poll the FooocusAPI task endpoint until completion
+    
+    Args:
+        api_url: Base URL of Fooocus API (e.g., http://127.0.0.1:7866)
+        task_id: Task ID from the initial POST request
+        timeout: Maximum time to wait in seconds (5 minutes)
+        poll_interval: Seconds between polls
+    
+    Returns:
+        Result data if completed successfully, None if timeout
+    """
+    import time
+    
+    start_time = time.time()
+    poll_count = 0
+    
+    while time.time() - start_time < timeout:
+        try:
+            # Poll /tasks/{task_id} endpoint
+            response = requests.get(
+                f"{api_url}/tasks/{task_id}",
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                task_data = response.json()
+                status = task_data.get("task_status", "").upper()
+                progress = task_data.get("progress", 0)
+                
+                poll_count += 1
+                if poll_count % 10 == 0:  # Log every 10 polls
+                    print(f"Poll #{poll_count}: Status={status}, Progress={progress*100:.1f}%")
+                
+                if status == "COMPLETED":
+                    print(f"Task completed! Retrieved after {poll_count} polls ({time.time() - start_time:.1f}s)")
+                    # Return the result field which contains image paths
+                    return task_data.get("result")
+                elif status == "FAILED":
+                    print(f"Task failed: {task_data.get('message', 'Unknown error')}")
+                    return None
+            
+            time.sleep(poll_interval)
+            
+        except Exception as e:
+            print(f"Poll error: {e}")
+            time.sleep(poll_interval)
+    
+    print(f"Task polling timed out after {timeout} seconds")
+    return None
+
+
 def handler(event):
     """
     RunPod Serverless Handler - matches frontend expectations
@@ -176,6 +229,22 @@ def handler(event):
             }
         
         result = response.json()
+        print(f"Initial response type: {type(result)}")
+        
+        # Check if response is a task_id (async response) or direct results (sync response)
+        if isinstance(result, dict) and "task_id" in result:
+            print(f"Got task_id: {result['task_id']}, polling for completion...")
+            task_id = result["task_id"]
+            result = poll_for_completion(fooocus_api, task_id)
+        
+        if result is None:
+            return {
+                "output": {
+                    "error": "Task polling timeout - took too long to complete",
+                    "progress": 0
+                }
+            }
+        
         print(f"Fooocus API response type: {type(result)}")
         print(f"Response sample: {str(result)[:200]}")
         
