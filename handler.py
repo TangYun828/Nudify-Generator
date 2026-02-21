@@ -318,30 +318,57 @@ def handler(event):
         generated_files = []  # Track files to delete after encoding
         
         def parse_api_url_to_filepath(img_url):
-            """Convert FooocusAPI HTTP URL to local file path"""
+            """Convert FooocusAPI HTTP URL to local file path
+            
+            Tries multiple possible locations for Fooocus outputs:
+            1. /content/outputs/ (Fooocus running from /content)
+            2. /content/app/outputs/ (Alternative app structure)
+            3. /workspace/Fooocus/outputs/ (RunPod standard)
+            4. /app/outputs/ (Docker standard)
+            5. /outputs/ (Bare outputs directory)
+            """
             if not isinstance(img_url, str):
                 return None
             
-            # Case 1: HTTP URL from Fooocus API (http://127.0.0.1:7866/outputs/...)
+            # Extract the relative path from HTTP URL
+            # e.g., http://127.0.0.1:7866/outputs/2026-02-21/image.png → /outputs/2026-02-21/image.png
+            relative_path = None
+            
             if img_url.startswith('http://127.0.0.1:7866/outputs/'):
-                path_part = img_url.replace('http://127.0.0.1:7866', '')
-                return f"/content/app{path_part}"
-            
-            # Case 2: Generic HTTP URL (different server)
+                relative_path = img_url.replace('http://127.0.0.1:7866', '')
             elif img_url.startswith('http'):
-                parts = img_url.split('/')
-                if len(parts) >= 2:
-                    date_part = parts[-2]
-                    filename = parts[-1]
-                    return f"/content/app/outputs/{date_part}/{filename}"
-            
-            # Case 3: Path starting with /outputs/
+                # Extract /outputs/date/filename pattern
+                if '/outputs/' in img_url:
+                    relative_path = '/' + '/'.join(img_url.split('/outputs/')[-1].split('/'))
+                    relative_path = '/outputs/' + '/'.join(relative_path.split('/')[1:])
             elif img_url.startswith('/outputs/'):
-                return f"/content/app{img_url}"
-            
-            # Case 4: Relative path
+                relative_path = img_url
             else:
-                return f"/content/app/outputs/{img_url}"
+                relative_path = f"/outputs/{img_url}"
+            
+            if not relative_path:
+                return None
+            
+            # Try each possible base directory
+            possible_bases = [
+                '/content/outputs',      # Fooocus from /content
+                '/content/app/outputs',  # Alternative app structure
+                '/workspace/Fooocus/outputs',  # RunPod standard
+                '/app/outputs',          # Docker standard
+                '/outputs',              # Bare outputs
+            ]
+            
+            for base in possible_bases:
+                full_path = base + relative_path
+                if os.path.exists(full_path):
+                    print(f"✓ Found image at: {full_path}")
+                    return full_path
+            
+            # If not found, try the most likely default
+            print(f"Warning: Image not found in any standard location")
+            print(f"  Tried: {possible_bases}")
+            print(f"  Relative path: {relative_path}")
+            return None
         
         if isinstance(result, list):
             for img_url in result:
@@ -355,14 +382,22 @@ def handler(event):
                     print(f"Reading image from: {file_path}")
                     if os.path.exists(file_path):
                         try:
+                            file_size = os.path.getsize(file_path)
+                            print(f"  File size: {file_size} bytes")
                             with open(file_path, "rb") as f:
-                                img_data = base64.b64encode(f.read()).decode("utf-8")
+                                raw_data = f.read()
+                                print(f"  Read {len(raw_data)} bytes from disk")
+                                img_data = base64.b64encode(raw_data).decode("utf-8")
+                                print(f"  Base64 encoded: {len(img_data)} characters")
                                 images.append(img_data)
+                                print(f"  ✓ Added to images list (total: {len(images)})")
                             generated_files.append(file_path)
                         except Exception as e:
-                            print(f"Error reading file: {e}")
+                            import traceback
+                            print(f"✗ Error reading file: {e}")
+                            traceback.print_exc()
                     else:
-                        print(f"Warning: File not found: {file_path}")
+                        print(f"✗ File not found at: {file_path}")
         elif isinstance(result, dict):
             # Check for various possible response structures
             result_list = result.get('result') or result.get('results') or result.get('images') or []
@@ -376,32 +411,47 @@ def handler(event):
                     print(f"Reading image from: {file_path}")
                     if os.path.exists(file_path):
                         try:
+                            file_size = os.path.getsize(file_path)
+                            print(f"  File size: {file_size} bytes")
                             with open(file_path, "rb") as f:
-                                img_data = base64.b64encode(f.read()).decode("utf-8")
+                                raw_data = f.read()
+                                print(f"  Read {len(raw_data)} bytes from disk")
+                                img_data = base64.b64encode(raw_data).decode("utf-8")
+                                print(f"  Base64 encoded: {len(img_data)} characters")
                                 images.append(img_data)
+                                print(f"  ✓ Added to images list (total: {len(images)})")
                             generated_files.append(file_path)
                         except Exception as e:
-                            print(f"Error reading file: {e}")
-        
-        # Clean up generated files after encoding
-        if generated_files:
-            print(f"Cleaning up {len(generated_files)} generated files...")
-            for file_path in generated_files:
-                try:
-                    os.remove(file_path)
-                except Exception as e:
-                    print(f"Warning: Could not delete {file_path}: {e}")
+                            import traceback
+                            print(f"✗ Error reading file: {e}")
+                            traceback.print_exc()
+                    else:
+                        print(f"✗ File not found at: {file_path}")
         
         if not images:
             clean()  # Cleanup temp files
+            print(f"✗ ERROR: No images were successfully encoded")
             return {
                 "error": "No images generated - check Fooocus API response",
                 "progress": 0
             }
         
-        # Success - cleanup temp files before returning
+        print(f"\n✓ SUCCESS: Encoded {len(images)} image(s) to base64")
+        
+        # Clean up generated files after encoding (AFTER base64 is complete)
+        if generated_files:
+            print(f"Cleaning up {len(generated_files)} generated files...")
+            for file_path in generated_files:
+                try:
+                    os.remove(file_path)
+                    print(f"  ✓ Deleted: {file_path}")
+                except Exception as e:
+                    print(f"  Warning: Could not delete {file_path}: {e}")
+        
+        # Final cleanup of RunPod temp files
         clean()
         
+        print(f"Returning response with {len(images)} image(s)...")
         return {
             "images": images,
             "progress": 100,
