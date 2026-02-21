@@ -25,9 +25,12 @@ def start_fooocus():
     print(f"Content directory exists: {os.path.exists('/content')}")
     print(f"App directory exists: {os.path.exists('/content/app')}")
     
-    # Run entrypoint.sh to set up symlinks and start Fooocus with API
-    # API will run on port 7866 (Gradio port + 1)
+    # Start Fooocus with FastAPI using entrypoint.sh
+    # entrypoint.sh sets up model symlinks, then calls launch.py
+    # API will run on port 7866 (WebUI port + 1)
     # Use empty apikey to disable authentication
+    import threading
+    
     process = subprocess.Popen(
         ["bash", "/content/entrypoint.sh", "--listen", "--apikey", ""],
         cwd="/content",
@@ -45,7 +48,6 @@ def start_fooocus():
         except:
             pass
     
-    import threading
     log_thread = threading.Thread(target=print_logs, daemon=True)
     log_thread.start()
     
@@ -147,8 +149,8 @@ def handler(event):
             "output_format": output_format,
             "async_process": False,  # Synchronous for serverless
             "stream_output": False,  # No streaming in serverless
-            "require_base64": True,  # Return base64
             "performance_selection": "Quality"
+            # Note: require_base64 is not used according to FooocusAPI docs
         }
         
         # Call Fooocus FastAPI endpoint
@@ -174,52 +176,46 @@ def handler(event):
             }
         
         result = response.json()
-        print(f"Fooocus API response: {type(result)}")
+        print(f"Fooocus API response type: {type(result)}")
+        print(f"Response sample: {str(result)[:200]}")
         
-        # Extract image data from response
-        # With require_base64=True, FastAPI returns base64 encoded images
+        # FooocusAPI returns a list of file paths
+        # Example: ["/content/app/outputs/2024-06-30/image_xxx.png"]
         images = []
         
         if isinstance(result, list):
-            # Response is a list of image objects or base64 strings
-            for item in result:
-                if isinstance(item, dict):
-                    # Check for base64 data
-                    if "base64" in item:
-                        images.append(item["base64"])
-                    # Or check for URL/path
-                    elif "url" in item:
-                        img_url = item["url"]
-                        if img_url.startswith("data:image"):
-                            # Already base64 data URL
-                            images.append(img_url.split(",")[1])
-                        elif os.path.exists(img_url):
-                            # Local file path
-                            with open(img_url, "rb") as f:
-                                img_data = base64.b64encode(f.read()).decode("utf-8")
-                                images.append(img_data)
-                elif isinstance(item, str):
-                    if item.startswith("data:image"):
-                        images.append(item.split(",")[1])
-                    elif os.path.exists(item):
-                        with open(item, "rb") as f:
+            for img_path in result:
+                # img_path is a file path
+                if isinstance(img_path, str):
+                    # Remove any URL prefix and get actual file path
+                    file_path = img_path
+                    if file_path.startswith('/outputs/'):
+                        file_path = f"/content/app{file_path}"
+                    elif not file_path.startswith('/'):
+                        file_path = f"/content/app/outputs/{file_path}"
+                    
+                    print(f"Reading image from: {file_path}")
+                    if os.path.exists(file_path):
+                        with open(file_path, "rb") as f:
                             img_data = base64.b64encode(f.read()).decode("utf-8")
                             images.append(img_data)
+                    else:
+                        print(f"Warning: File not found: {file_path}")
         elif isinstance(result, dict):
-            # Check for images in different possible keys
-            for key in ["base64", "images", "results", "data"]:
-                if key in result:
-                    result_data = result[key]
-                    if isinstance(result_data, list):
-                        for item in result_data:
-                            if isinstance(item, str):
-                                if item.startswith("data:image"):
-                                    images.append(item.split(",")[1])
-                                elif os.path.exists(item):
-                                    with open(item, "rb") as f:
-                                        img_data = base64.b64encode(f.read()).decode("utf-8")
-                                        images.append(img_data)
-                    break
+            # Check for various possible response structures
+            result_list = result.get('result') or result.get('results') or result.get('images') or []
+            for img_path in result_list:
+                if isinstance(img_path, str):
+                    file_path = img_path
+                    if file_path.startswith('/outputs/'):
+                        file_path = f"/content/app{file_path}"
+                    elif not file_path.startswith('/'):
+                        file_path = f"/content/app/outputs/{file_path}"
+                    
+                    if os.path.exists(file_path):
+                        with open(file_path, "rb") as f:
+                            img_data = base64.b64encode(f.read()).decode("utf-8")
+                            images.append(img_data)
         
         if not images:
             clean()  # Cleanup temp files
