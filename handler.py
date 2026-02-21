@@ -310,6 +310,11 @@ def handler(event):
                 print(f"First result item type: {type(result[0])}")
                 print(f"First result: {str(result[0])[:150]}")
         
+        # Allow disk I/O to complete (file may not be fully written yet)
+        # API finishes, but OS needs time to flush to disk in serverless containers
+        print("Waiting 1 second for disk I/O to complete...")
+        time.sleep(1)
+        
         # FooocusAPI returns HTTP URLs (from post_worker.py's url_path() function)
         # See: https://github.com/mrhan1993/FooocusAPI/blob/main/apis/utils/file_utils.py#L64
         # Example URLs: ["http://127.0.0.1:7866/outputs/2024-06-30/image_xxx.png"]
@@ -320,56 +325,53 @@ def handler(event):
         def parse_api_url_to_filepath(img_url):
             """Convert FooocusAPI HTTP URL to local file path
             
-            Tries multiple possible locations for Fooocus outputs:
-            1. /content/outputs/ (Fooocus running from /content)
-            2. /content/app/outputs/ (Alternative app structure)
-            3. /workspace/Fooocus/outputs/ (RunPod standard)
-            4. /app/outputs/ (Docker standard)
-            5. /outputs/ (Bare outputs directory)
+            Confirmed from logs: /content/app/outputs/ is the correct base path
             """
             if not isinstance(img_url, str):
                 return None
             
-            # Extract the relative path from HTTP URL
-            # e.g., http://127.0.0.1:7866/outputs/2026-02-21/image.png → /outputs/2026-02-21/image.png
+            # Extract the date/filename part AFTER /outputs/
+            # e.g., http://127.0.0.1:7866/outputs/2026-02-21/image.png → 2026-02-21/image.png
             relative_path = None
             
-            if img_url.startswith('http://127.0.0.1:7866/outputs/'):
-                relative_path = img_url.replace('http://127.0.0.1:7866', '')
-            elif img_url.startswith('http'):
-                # Extract /outputs/date/filename pattern
-                if '/outputs/' in img_url:
-                    relative_path = '/' + '/'.join(img_url.split('/outputs/')[-1].split('/'))
-                    relative_path = '/outputs/' + '/'.join(relative_path.split('/')[1:])
-            elif img_url.startswith('/outputs/'):
-                relative_path = img_url
+            if '/outputs/' in img_url:
+                # Split on /outputs/ and get everything after it
+                relative_path = img_url.split('/outputs/')[-1]
             else:
-                relative_path = f"/outputs/{img_url}"
-            
-            if not relative_path:
+                print(f"Warning: URL doesn't contain /outputs/: {img_url}")
                 return None
             
-            # Try each possible base directory
+            if not relative_path:
+                print(f"Warning: Could not extract relative path from: {img_url}")
+                return None
+            
+            # Clean any leading slashes
+            relative_path = relative_path.lstrip('/')
+            
+            print(f"  Extracted relative path: {relative_path}")
+            
+            # Try each possible base directory (CONFIRMED PATH FIRST)
             possible_bases = [
-                '/content/outputs',              # If outputs is directly in /content
-                '/content/Fooocus/outputs',      # If Fooocus root is /content/Fooocus (most likely!)
-                '/content/fooocusapi/outputs',   # Alternative casing
-                '/content/app/outputs',          # Alternative app structure
-                '/workspace/Fooocus/outputs',    # RunPod standard
-                '/app/outputs',                  # Docker standard
-                '/outputs',                      # Bare outputs
+                '/content/app/outputs',          # CONFIRMED from Fooocus logs
+                '/content/outputs',              # Fallback
+                '/content/Fooocus/outputs',      # Fallback
+                '/workspace/Fooocus/outputs',    # Fallback
+                '/app/outputs',                  # Fallback
+                '/outputs',                      # Fallback
             ]
             
             for base in possible_bases:
-                full_path = base + relative_path
+                # Use os.path.join for proper path construction
+                full_path = os.path.join(base, relative_path)
+                print(f"  Trying: {full_path}")
                 if os.path.exists(full_path):
-                    print(f"✓ Found image at: {full_path}")
+                    print(f"  ✓ Found image at: {full_path}")
                     return full_path
             
-            # If not found, try the most likely default
-            print(f"Warning: Image not found in any standard location")
-            print(f"  Tried: {possible_bases}")
-            print(f"  Relative path: {relative_path}")
+            # If not found, log what we tried
+            print(f"  ✗ Image not found in any location")
+            print(f"  Tried bases: {possible_bases}")
+            print(f"  With relative path: {relative_path}")
             return None
 
         def encode_image_from_path_or_url(file_path, img_url):
