@@ -1,0 +1,20 @@
+{
+    "path_checkpoints": [
+        "/workspace/FooocusAPI/models/checkpoints"
+    ],
+    "path_loras": [
+        "/workspace/FooocusAPI/models/loras"
+    ],
+    "path_embeddings": "/workspace/FooocusAPI/models/embeddings",
+    "path_vae_approx": "/workspace/FooocusAPI/models/vae_approx",
+    "path_vae": "/workspace/FooocusAPI/models/vae",
+    "path_upscale_models": "/workspace/FooocusAPI/models/upscale_models",
+    "path_inpaint": "/workspace/FooocusAPI/models/inpaint",
+    "path_controlnet": "/workspace/FooocusAPI/models/controlnet",
+    "path_clip_vision": "/workspace/FooocusAPI/models/clip_vision",
+    "path_fooocus_expansion": "/workspace/FooocusAPI/models/prompt_expansion/fooocus_expansion",
+    "path_wildcards": "/workspace/FooocusAPI/wildcards",
+    "path_safety_checker": "/workspace/FooocusAPI/models/safety_checker",
+    "path_sam": "/workspace/FooocusAPI/models/sam",
+    "path_outputs": "/workspace/FooocusAPI/outputs"
+}
