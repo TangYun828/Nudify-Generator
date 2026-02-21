@@ -33,15 +33,12 @@ RUN mkdir -p /content/data/models/checkpoints && \
 
 # Install RunPod SDK for serverless handler
 RUN pip install --no-cache-dir runpod
-
+ 
 # Copy handler for RunPod serverless
 COPY --chown=user:user handler.py /content/
-
+ 
 # Set Python path to find handler module
-ENV PYTHONUNBUFFERED=1
-
-CMD ["python", "-u", "/content/handler.py"]
 ENV PYTHONPATH="/content:${PYTHONPATH}"
-
+ 
 # Start handler for serverless (RunPod will call the handler function)
 CMD [ "python", "-u", "/content/handler.py" ]

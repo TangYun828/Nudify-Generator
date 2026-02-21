@@ -37,12 +37,8 @@ def start_fooocus():
     # Print startup logs in background
     def print_logs():
         try:
-            while True:
-                line = process.stdout.readline()
-                if line:
-                    print(f"[Fooocus] {line.rstrip()}")
-                else:
-                    break
+            for line in process.stdout:
+                print(f"[Fooocus] {line.rstrip()}")
         except:
             pass
     
