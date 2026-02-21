@@ -12,6 +12,7 @@ import time
 import requests
 from io import BytesIO
 from PIL import Image
+from runpod.serverless.utils.rp_cleanup import clean
 
 # Add app directory to path
 sys.path.insert(0, '/content/app')
@@ -180,12 +181,16 @@ def handler(event):
                         images.append(img_data)
         
         if not images:
+            clean()  # Cleanup temp files
             return {
                 "output": {
                     "error": "No images generated - check Fooocus API response",
                     "progress": 0
                 }
             }
+        
+        # Success - cleanup temp files before returning
+        clean()
         
         return {
             "output": {
@@ -199,6 +204,12 @@ def handler(event):
         import traceback
         print(f"Error: {str(e)}")
         traceback.print_exc()
+        
+        # Cleanup even on error
+        try:
+            clean()
+        except:
+            pass
         
         return {
             "output": {
