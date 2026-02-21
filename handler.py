@@ -118,36 +118,64 @@ def poll_for_completion(api_url, task_id, timeout=300, poll_interval=3):
     
     while time.time() - start_time < timeout:
         try:
-            # Poll /tasks/{task_id} endpoint
+            # Poll /tasks/{task_id} endpoint - NOTE: Requires API key header
             response = requests.get(
                 f"{api_url}/tasks/{task_id}",
+                headers={
+                    "Content-Type": "application/json"
+                },
                 timeout=10
             )
             
             if response.status_code == 200:
                 task_data = response.json()
-                status = task_data.get("task_status", "").upper()
+                status = task_data.get("task_status", "")  # Values: pending, running, success, failed
                 progress = task_data.get("progress", 0)
                 
                 poll_count += 1
-                if poll_count % 10 == 0:  # Log every 10 polls
+                if poll_count % 5 == 1:  # Log every 5 polls
                     print(f"Poll #{poll_count}: Status={status}, Progress={progress*100:.1f}%")
                 
-                if status == "COMPLETED":
-                    print(f"Task completed! Retrieved after {poll_count} polls ({time.time() - start_time:.1f}s)")
-                    # Return the result field which contains image paths
-                    return task_data.get("result")
-                elif status == "FAILED":
-                    print(f"Task failed: {task_data.get('message', 'Unknown error')}")
+                # Task completion states from FooocusAPI post_worker.py:
+                # - "finished" = successful completion
+                # - "stop" = task was explicitly stopped
+                # - "skip" = task was skipped
+                # See: https://github.com/mrhan1993/FooocusAPI/blob/main/apis/utils/post_worker.py
+                if status == "finished":
+                    elapsed = time.time() - start_time
+                    print(f"✓ Task completed! Status={status}, Retrieved after {poll_count} polls ({elapsed:.1f}s)")
+                    # Result contains HTTP URLs from post_worker's url_path() conversion
+                    # Example: ["http://127.0.0.1:7866/outputs/2024-06-30/image.png"]
+                    result = task_data.get("result", [])
+                    print(f"  Result type: {type(result)}, length: {len(result) if isinstance(result, list) else 'N/A'}")
+                    return result
+                elif status in ["stop", "skip"]:
+                    # Task stopped/skipped but may have partial results
+                    elapsed = time.time() - start_time
+                    print(f"⚠ Task {status}ped (status={status}), retrieved after {poll_count} polls ({elapsed:.1f}s)")
+                    result = task_data.get("result", [])
+                    if result:
+                        print(f"  Partial results: {len(result)} item(s)")
+                    return result if result else None
+                elif status in ["failed", "FAILED", "error"]:
+                    print(f"✗ Task failed with status: {status}")
+                    print(f"  Full response: {json.dumps(task_data, indent=2)[:500]}")
                     return None
+                # Still pending or running - continue polling
+            elif response.status_code == 404:
+                print(f"Task not found (404): {task_id} - API may not support polling")
+                return None
+            else:
+                print(f"Unexpected status {response.status_code}: {response.text[:100]}")
             
             time.sleep(poll_interval)
             
         except Exception as e:
-            print(f"Poll error: {e}")
+            print(f"Poll error: {type(e).__name__}: {e}")
             time.sleep(poll_interval)
     
-    print(f"Task polling timed out after {timeout} seconds")
+    elapsed = time.time() - start_time
+    print(f"✗ Task polling timed out after {elapsed:.1f}s ({poll_count} polls, {timeout}s limit)")
     return None
 
 
@@ -202,6 +230,8 @@ def handler(event):
         fooocus_api = "http://127.0.0.1:7866"
         
         # Prepare payload matching CommonRequest model
+        # IMPORTANT: When async_process=False, API returns results directly (no task_id)
+        # When async_process=True, API returns {"task_id": "..."} for async polling
         payload = {
             "prompt": prompt,
             "negative_prompt": negative_prompt,
@@ -209,20 +239,18 @@ def handler(event):
             "aspect_ratios_selection": aspect_ratio,
             "image_number": int(num_images),
             "output_format": output_format,
-            "async_process": False,  # Synchronous for serverless
+            "async_process": False,  # Synchronous: returns results directly
             "stream_output": False,  # No streaming in serverless
             "performance_selection": "Quality"
-            # Note: require_base64 is not used according to FooocusAPI docs
         }
         
         # Call Fooocus FastAPI endpoint
-        print(f"Calling Fooocus FastAPI at {fooocus_api}/v1/engine/generate/...")
+        print(f"Calling Fooocus FastAPI at {fooocus_api}/v1/engine/generate/ (sync mode)...")
         response = requests.post(
             f"{fooocus_api}/v1/engine/generate/",
             json=payload,
             headers={
                 "Content-Type": "application/json"
-                # No X-API-KEY header needed when apikey is empty
             },
             timeout=300
         )
@@ -237,66 +265,131 @@ def handler(event):
                 }
             }
         
-        result = response.json()
-        print(f"Initial response type: {type(result)}")
+        response_data = response.json()
+        print(f"Response type: {type(response_data)}")
+        print(f"Response keys: {response_data.keys() if isinstance(response_data, dict) else 'N/A'}")
+        print(f"Response preview: {json.dumps(response_data, indent=2)[:300]}")
         
-        # Check if response is a task_id (async response) or direct results (sync response)
-        if isinstance(result, dict) and "task_id" in result:
-            print(f"Got task_id: {result['task_id']}, polling for completion...")
-            task_id = result["task_id"]
-            result = poll_for_completion(fooocus_api, task_id)
+        result = None
+        
+        # Handle different response types
+        if isinstance(response_data, dict):
+            # Check if it's a task_id response (async mode) - this shouldn't happen with async_process=False
+            if "task_id" in response_data:
+                print(f"Got task_id: {response_data['task_id']}")
+                print("WARNING: Received task_id despite async_process=False. This is unexpected.")
+                print("Attempting to poll anyway...")
+                task_id = response_data["task_id"]
+                result = poll_for_completion(fooocus_api, task_id)
+            # Check for direct result in response
+            elif "result" in response_data:
+                print(f"Got result directly in response (key='result')")
+                result = response_data.get("result")
+            elif "images" in response_data:
+                print(f"Got images directly in response (key='images')")
+                result = response_data.get("images")
+            else:
+                # For sync requests, the entire response might be file paths
+                print(f"Unexpected response structure. Full response: {response_data}")
+                # Try to extract any list-like data
+                for key in ["outputs", "files", "data", "image_paths"]:
+                    if key in response_data and isinstance(response_data[key], list):
+                        result = response_data[key]
+                        break
+        elif isinstance(response_data, list):
+            # Direct list of results
+            print(f"Received result as direct list")
+            result = response_data
+        else:
+            print(f"Unexpected response type: {type(response_data)}")
         
         if result is None:
             return {
                 "output": {
-                    "error": "Task polling timeout - took too long to complete",
+                    "error": "No result or task_id in API response",
                     "progress": 0
                 }
             }
         
-        print(f"Fooocus API response type: {type(result)}")
-        print(f"Response sample: {str(result)[:200]}")
+        print(f"Final result type: {type(result)}, is list: {isinstance(result, list)}")
+        if isinstance(result, list):
+            print(f"Result list length: {len(result)}")
+            if result:
+                print(f"First result item type: {type(result[0])}")
+                print(f"First result: {str(result[0])[:150]}")
         
-        # FooocusAPI returns a list of file paths
-        # Example: ["/content/app/outputs/2024-06-30/image_xxx.png"]
+        # FooocusAPI returns HTTP URLs (from post_worker.py's url_path() function)
+        # See: https://github.com/mrhan1993/FooocusAPI/blob/main/apis/utils/file_utils.py#L64
+        # Example URLs: ["http://127.0.0.1:7866/outputs/2024-06-30/image_xxx.png"]
+        # We need to extract the file path and read from local disk
         images = []
         generated_files = []  # Track files to delete after encoding
         
+        def parse_api_url_to_filepath(img_url):
+            """Convert FooocusAPI HTTP URL to local file path"""
+            if not isinstance(img_url, str):
+                return None
+            
+            # Case 1: HTTP URL from Fooocus API (http://127.0.0.1:7866/outputs/...)
+            if img_url.startswith('http://127.0.0.1:7866/outputs/'):
+                path_part = img_url.replace('http://127.0.0.1:7866', '')
+                return f"/content/app{path_part}"
+            
+            # Case 2: Generic HTTP URL (different server)
+            elif img_url.startswith('http'):
+                parts = img_url.split('/')
+                if len(parts) >= 2:
+                    date_part = parts[-2]
+                    filename = parts[-1]
+                    return f"/content/app/outputs/{date_part}/{filename}"
+            
+            # Case 3: Path starting with /outputs/
+            elif img_url.startswith('/outputs/'):
+                return f"/content/app{img_url}"
+            
+            # Case 4: Relative path
+            else:
+                return f"/content/app/outputs/{img_url}"
+        
         if isinstance(result, list):
-            for img_path in result:
-                # img_path is a file path
-                if isinstance(img_path, str):
-                    # Remove any URL prefix and get actual file path
-                    file_path = img_path
-                    if file_path.startswith('/outputs/'):
-                        file_path = f"/content/app{file_path}"
-                    elif not file_path.startswith('/'):
-                        file_path = f"/content/app/outputs/{file_path}"
+            for img_url in result:
+                if isinstance(img_url, str):
+                    file_path = parse_api_url_to_filepath(img_url)
+                    
+                    if not file_path:
+                        print(f"Warning: Could not parse image URL: {img_url}")
+                        continue
                     
                     print(f"Reading image from: {file_path}")
                     if os.path.exists(file_path):
-                        with open(file_path, "rb") as f:
-                            img_data = base64.b64encode(f.read()).decode("utf-8")
-                            images.append(img_data)
-                        generated_files.append(file_path)
+                        try:
+                            with open(file_path, "rb") as f:
+                                img_data = base64.b64encode(f.read()).decode("utf-8")
+                                images.append(img_data)
+                            generated_files.append(file_path)
+                        except Exception as e:
+                            print(f"Error reading file: {e}")
                     else:
                         print(f"Warning: File not found: {file_path}")
         elif isinstance(result, dict):
             # Check for various possible response structures
             result_list = result.get('result') or result.get('results') or result.get('images') or []
-            for img_path in result_list:
-                if isinstance(img_path, str):
-                    file_path = img_path
-                    if file_path.startswith('/outputs/'):
-                        file_path = f"/content/app{file_path}"
-                    elif not file_path.startswith('/'):
-                        file_path = f"/content/app/outputs/{file_path}"
+            for img_url in result_list:
+                if isinstance(img_url, str):
+                    file_path = parse_api_url_to_filepath(img_url)
                     
+                    if not file_path:
+                        continue
+                    
+                    print(f"Reading image from: {file_path}")
                     if os.path.exists(file_path):
-                        with open(file_path, "rb") as f:
-                            img_data = base64.b64encode(f.read()).decode("utf-8")
-                            images.append(img_data)
-                        generated_files.append(file_path)
+                        try:
+                            with open(file_path, "rb") as f:
+                                img_data = base64.b64encode(f.read()).decode("utf-8")
+                                images.append(img_data)
+                            generated_files.append(file_path)
+                        except Exception as e:
+                            print(f"Error reading file: {e}")
         
         # Clean up generated files after encoding
         if generated_files:
