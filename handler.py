@@ -25,9 +25,10 @@ def start_fooocus():
     print(f"Content directory exists: {os.path.exists('/content')}")
     print(f"App directory exists: {os.path.exists('/content/app')}")
     
-    # Run entrypoint.sh to set up symlinks and start Fooocus
+    # Run entrypoint.sh to set up symlinks and start Fooocus with API
+    # API will run on port 7866 (Gradio port + 1)
     process = subprocess.Popen(
-        ["bash", "/content/entrypoint.sh", "--listen"],
+        ["bash", "/content/entrypoint.sh", "--listen", "--apikey", "none"],
         cwd="/content",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -47,20 +48,24 @@ def start_fooocus():
     log_thread = threading.Thread(target=print_logs, daemon=True)
     log_thread.start()
     
-    # Wait for API to be ready (increased to 240 seconds = 4 minutes)
+    # Wait for FastAPI to be ready on port 7866 (240 seconds = 4 minutes)
     max_retries = 240
+    
     for i in range(max_retries):
         try:
-            response = requests.get("http://127.0.0.1:7865/config", timeout=5)
+            # Check if FastAPI server is running on port 7866
+            response = requests.get("http://127.0.0.1:7866/docs", timeout=3)
             if response.status_code == 200:
-                print(f"✓ Fooocus API is ready! (attempt {i+1})")
+                print(f"✓ Fooocus FastAPI is ready on port 7866! (waited {i+1}s)")
+                # Wait 5 more seconds for model loading
+                time.sleep(5)
                 return process
         except Exception as e:
             if i % 20 == 0:
-                print(f"Waiting for Fooocus... ({i}s elapsed) - Last error: {str(e)[:100]}")
+                print(f"Waiting for Fooocus FastAPI... ({i}s elapsed)")
             time.sleep(1)
     
-    raise Exception("Failed to start Fooocus API after 240 seconds")
+    raise Exception("Failed to start Fooocus FastAPI after 240 seconds")
 
 # Initialize on import
 FOOOCUS_PROCESS = None
@@ -128,26 +133,27 @@ def handler(event):
         print(f"Generating {num_images} image(s) with prompt: {prompt}")
         print(f"Model: {base_model}, Format: {output_format}, Aspect: {aspect_ratio}")
         
-        # Call Fooocus API directly
-        fooocus_api = "http://127.0.0.1:7865"
+        # Call Fooocus FastAPI on port 7866
+        fooocus_api = "http://127.0.0.1:7866"
         
-        # Prepare generation payload for Fooocus API
+        # Prepare payload matching CommonRequest model
         payload = {
             "prompt": prompt,
             "negative_prompt": negative_prompt,
-            "use_base_model": base_model,
-            "performance": "Quality",
+            "base_model_name": base_model,
             "aspect_ratios_selection": aspect_ratio,
             "image_number": int(num_images),
-            "style_selections": [],
-            "quality": "High",
-            "output_format": output_format
+            "output_format": output_format,
+            "async_process": False,  # Synchronous for serverless
+            "stream_output": False,  # No streaming in serverless
+            "require_base64": True,  # Return base64
+            "performance_selection": "Quality"
         }
         
-        # Call Fooocus generation endpoint
-        print("Calling Fooocus API...")
+        # Call Fooocus FastAPI endpoint
+        print(f"Calling Fooocus FastAPI at {fooocus_api}/v1/engine/generate/...")
         response = requests.post(
-            f"{fooocus_api}/v1/generation",
+            f"{fooocus_api}/v1/engine/generate/",
             json=payload,
             timeout=300
         )
@@ -163,22 +169,52 @@ def handler(event):
             }
         
         result = response.json()
-        print(f"Fooocus response keys: {result.keys() if isinstance(result, dict) else 'list'}")
+        print(f"Fooocus API response: {type(result)}")
         
         # Extract image data from response
+        # With require_base64=True, FastAPI returns base64 encoded images
         images = []
-        if isinstance(result, dict) and "results" in result:
-            for img_path in result["results"]:
-                if os.path.exists(img_path):
-                    with open(img_path, "rb") as f:
-                        img_data = base64.b64encode(f.read()).decode("utf-8")
-                        images.append(img_data)
-        elif isinstance(result, list) and len(result) > 0:
+        
+        if isinstance(result, list):
+            # Response is a list of image objects or base64 strings
             for item in result:
-                if isinstance(item, str) and os.path.exists(item):
-                    with open(item, "rb") as f:
-                        img_data = base64.b64encode(f.read()).decode("utf-8")
-                        images.append(img_data)
+                if isinstance(item, dict):
+                    # Check for base64 data
+                    if "base64" in item:
+                        images.append(item["base64"])
+                    # Or check for URL/path
+                    elif "url" in item:
+                        img_url = item["url"]
+                        if img_url.startswith("data:image"):
+                            # Already base64 data URL
+                            images.append(img_url.split(",")[1])
+                        elif os.path.exists(img_url):
+                            # Local file path
+                            with open(img_url, "rb") as f:
+                                img_data = base64.b64encode(f.read()).decode("utf-8")
+                                images.append(img_data)
+                elif isinstance(item, str):
+                    if item.startswith("data:image"):
+                        images.append(item.split(",")[1])
+                    elif os.path.exists(item):
+                        with open(item, "rb") as f:
+                            img_data = base64.b64encode(f.read()).decode("utf-8")
+                            images.append(img_data)
+        elif isinstance(result, dict):
+            # Check for images in different possible keys
+            for key in ["base64", "images", "results", "data"]:
+                if key in result:
+                    result_data = result[key]
+                    if isinstance(result_data, list):
+                        for item in result_data:
+                            if isinstance(item, str):
+                                if item.startswith("data:image"):
+                                    images.append(item.split(",")[1])
+                                elif os.path.exists(item):
+                                    with open(item, "rb") as f:
+                                        img_data = base64.b64encode(f.read()).decode("utf-8")
+                                        images.append(img_data)
+                    break
         
         if not images:
             clean()  # Cleanup temp files
