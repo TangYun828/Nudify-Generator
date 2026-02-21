@@ -27,8 +27,9 @@ def start_fooocus():
     
     # Run entrypoint.sh to set up symlinks and start Fooocus with API
     # API will run on port 7866 (Gradio port + 1)
+    # Use empty apikey to disable authentication
     process = subprocess.Popen(
-        ["bash", "/content/entrypoint.sh", "--listen", "--apikey", "none"],
+        ["bash", "/content/entrypoint.sh", "--listen", "--apikey", ""],
         cwd="/content",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -155,6 +156,10 @@ def handler(event):
         response = requests.post(
             f"{fooocus_api}/v1/engine/generate/",
             json=payload,
+            headers={
+                "Content-Type": "application/json"
+                # No X-API-KEY header needed when apikey is empty
+            },
             timeout=300
         )
         
