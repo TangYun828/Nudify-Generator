@@ -182,6 +182,7 @@ def handler(event):
         # FooocusAPI returns a list of file paths
         # Example: ["/content/app/outputs/2024-06-30/image_xxx.png"]
         images = []
+        generated_files = []  # Track files to delete after encoding
         
         if isinstance(result, list):
             for img_path in result:
@@ -199,6 +200,7 @@ def handler(event):
                         with open(file_path, "rb") as f:
                             img_data = base64.b64encode(f.read()).decode("utf-8")
                             images.append(img_data)
+                        generated_files.append(file_path)
                     else:
                         print(f"Warning: File not found: {file_path}")
         elif isinstance(result, dict):
@@ -216,6 +218,16 @@ def handler(event):
                         with open(file_path, "rb") as f:
                             img_data = base64.b64encode(f.read()).decode("utf-8")
                             images.append(img_data)
+                        generated_files.append(file_path)
+        
+        # Clean up generated files after encoding
+        if generated_files:
+            print(f"Cleaning up {len(generated_files)} generated files...")
+            for file_path in generated_files:
+                try:
+                    os.remove(file_path)
+                except Exception as e:
+                    print(f"Warning: Could not delete {file_path}: {e}")
         
         if not images:
             clean()  # Cleanup temp files
