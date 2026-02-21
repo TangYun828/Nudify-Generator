@@ -351,11 +351,13 @@ def handler(event):
             
             # Try each possible base directory
             possible_bases = [
-                '/content/outputs',      # Fooocus from /content
-                '/content/app/outputs',  # Alternative app structure
-                '/workspace/Fooocus/outputs',  # RunPod standard
-                '/app/outputs',          # Docker standard
-                '/outputs',              # Bare outputs
+                '/content/outputs',              # If outputs is directly in /content
+                '/content/Fooocus/outputs',      # If Fooocus root is /content/Fooocus (most likely!)
+                '/content/fooocusapi/outputs',   # Alternative casing
+                '/content/app/outputs',          # Alternative app structure
+                '/workspace/Fooocus/outputs',    # RunPod standard
+                '/app/outputs',                  # Docker standard
+                '/outputs',                      # Bare outputs
             ]
             
             for base in possible_bases:
