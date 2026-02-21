@@ -28,11 +28,11 @@ def start_fooocus():
     # Start Fooocus with FastAPI using entrypoint.sh
     # entrypoint.sh sets up model symlinks, then calls launch.py
     # API will run on port 7866 (WebUI port + 1)
-    # Use empty apikey to disable authentication
+    # No WebUI (--nowebui), only API
     import threading
     
     process = subprocess.Popen(
-        ["bash", "/content/entrypoint.sh", "--listen", "--apikey", ""],
+        ["bash", "/content/entrypoint.sh", "--listen", "0.0.0.0", "--port", "7865", "--nowebui"],
         cwd="/content",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
