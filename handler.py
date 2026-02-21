@@ -371,6 +371,40 @@ def handler(event):
             print(f"  Tried: {possible_bases}")
             print(f"  Relative path: {relative_path}")
             return None
+
+        def encode_image_from_path_or_url(file_path, img_url):
+            """Encode image from local path or fallback to HTTP URL."""
+            if file_path and os.path.exists(file_path):
+                try:
+                    file_size = os.path.getsize(file_path)
+                    print(f"  File size: {file_size} bytes")
+                    with open(file_path, "rb") as f:
+                        raw_data = f.read()
+                    print(f"  Read {len(raw_data)} bytes from disk")
+                    img_data = base64.b64encode(raw_data).decode("utf-8")
+                    print(f"  Base64 encoded: {len(img_data)} characters")
+                    return img_data, file_path
+                except Exception as e:
+                    import traceback
+                    print(f"✗ Error reading file: {e}")
+                    traceback.print_exc()
+
+            if isinstance(img_url, str) and img_url.startswith("http"):
+                try:
+                    print(f"  Fallback: fetching via HTTP: {img_url}")
+                    response = requests.get(img_url, timeout=20)
+                    if response.status_code == 200:
+                        raw_data = response.content
+                        print(f"  Read {len(raw_data)} bytes from HTTP")
+                        img_data = base64.b64encode(raw_data).decode("utf-8")
+                        print(f"  Base64 encoded: {len(img_data)} characters")
+                        return img_data, None
+                    else:
+                        print(f"✗ HTTP fetch failed: {response.status_code}")
+                except Exception as e:
+                    print(f"✗ HTTP fetch error: {e}")
+
+            return None, None
         
         if isinstance(result, list):
             for img_url in result:
@@ -382,24 +416,14 @@ def handler(event):
                         continue
                     
                     print(f"Reading image from: {file_path}")
-                    if os.path.exists(file_path):
-                        try:
-                            file_size = os.path.getsize(file_path)
-                            print(f"  File size: {file_size} bytes")
-                            with open(file_path, "rb") as f:
-                                raw_data = f.read()
-                                print(f"  Read {len(raw_data)} bytes from disk")
-                                img_data = base64.b64encode(raw_data).decode("utf-8")
-                                print(f"  Base64 encoded: {len(img_data)} characters")
-                                images.append(img_data)
-                                print(f"  ✓ Added to images list (total: {len(images)})")
-                            generated_files.append(file_path)
-                        except Exception as e:
-                            import traceback
-                            print(f"✗ Error reading file: {e}")
-                            traceback.print_exc()
+                    img_data, used_path = encode_image_from_path_or_url(file_path, img_url)
+                    if img_data:
+                        images.append(img_data)
+                        print(f"  ✓ Added to images list (total: {len(images)})")
+                        if used_path:
+                            generated_files.append(used_path)
                     else:
-                        print(f"✗ File not found at: {file_path}")
+                        print(f"✗ Unable to load image from disk or URL")
         elif isinstance(result, dict):
             # Check for various possible response structures
             result_list = result.get('result') or result.get('results') or result.get('images') or []
@@ -411,24 +435,14 @@ def handler(event):
                         continue
                     
                     print(f"Reading image from: {file_path}")
-                    if os.path.exists(file_path):
-                        try:
-                            file_size = os.path.getsize(file_path)
-                            print(f"  File size: {file_size} bytes")
-                            with open(file_path, "rb") as f:
-                                raw_data = f.read()
-                                print(f"  Read {len(raw_data)} bytes from disk")
-                                img_data = base64.b64encode(raw_data).decode("utf-8")
-                                print(f"  Base64 encoded: {len(img_data)} characters")
-                                images.append(img_data)
-                                print(f"  ✓ Added to images list (total: {len(images)})")
-                            generated_files.append(file_path)
-                        except Exception as e:
-                            import traceback
-                            print(f"✗ Error reading file: {e}")
-                            traceback.print_exc()
+                    img_data, used_path = encode_image_from_path_or_url(file_path, img_url)
+                    if img_data:
+                        images.append(img_data)
+                        print(f"  ✓ Added to images list (total: {len(images)})")
+                        if used_path:
+                            generated_files.append(used_path)
                     else:
-                        print(f"✗ File not found at: {file_path}")
+                        print(f"✗ Unable to load image from disk or URL")
         
         if not images:
             clean()  # Cleanup temp files
@@ -439,6 +453,26 @@ def handler(event):
             }
         
         print(f"\n✓ SUCCESS: Encoded {len(images)} image(s) to base64")
+
+        # Optional: dump Fooocus log.html if it exists (debugging)
+        log_candidates = [
+            "/content/outputs/log.html",
+            "/content/app/outputs/log.html",
+            "/content/Fooocus/outputs/log.html",
+            "/workspace/Fooocus/outputs/log.html",
+            "/app/outputs/log.html",
+            "/outputs/log.html",
+        ]
+        for log_path in log_candidates:
+            if os.path.exists(log_path):
+                try:
+                    with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                        print("--- FOOOCUS LOG START ---")
+                        print(f.read())
+                        print("--- FOOOCUS LOG END ---")
+                except Exception as e:
+                    print(f"Warning: Could not read log file {log_path}: {e}")
+                break
         
         # Clean up generated files after encoding (AFTER base64 is complete)
         if generated_files:
