@@ -34,8 +34,8 @@ RUN mkdir -p /content/data/models/checkpoints && \
 # Install RunPod SDK for serverless handler
 RUN pip install --no-cache-dir runpod
  
-# Copy handler for RunPod serverless
-COPY --chown=user:user handler.py /content/
+# Copy handler and AWS safety modules for RunPod serverless
+COPY --chown=user:user handler.py safety_checker.py s3_uploader.py /content/
  
 # Set Python path to find handler module
 ENV PYTHONPATH="/content:${PYTHONPATH}"
