@@ -12,6 +12,8 @@ import time
 import requests
 import threading
 from runpod.serverless.utils.rp_cleanup import clean
+from safety_checker import check_image_safety
+from s3_uploader import upload_safe_image
 
 # Configuration
 FOOOCUS_API_URL = "http://127.0.0.1:7866"
@@ -157,10 +159,11 @@ def encode_image(file_path=None, img_url=None):
     return None, None
 
 
-def process_results(result_data):
-    """Extract and encode images from API result"""
+def process_results(result_data, user_id: str = "unknown", prompt: str = ""):
+    """Extract and encode images from API result with AWS Rekognition safety check"""
     images = []
     files_to_cleanup = []
+    safety_violations = []
     
     # Normalize result to list
     if isinstance(result_data, dict):
@@ -177,6 +180,75 @@ def process_results(result_data):
             continue
         
         file_path = url_to_filepath(img_url)
+        
+        if not file_path:
+            print(f"⚠ Skipping - file not found: {img_url}")
+            continue
+        
+        # ============================================
+        # LAYER 3: AWS Rekognition Safety Check
+        # ============================================
+        try:
+            print(f"🔍 Checking image safety: {os.path.basename(file_path)}")
+            safety_result = check_image_safety(file_path)
+            
+            if not safety_result['is_safe']:
+                # Image failed safety check - log and skip
+                print(f"❌ BLOCKED: {', '.join(safety_result['flagged_categories'])}")
+                print(f"   Confidence: {safety_result['confidence']:.1f}%")
+                
+                safety_violations.append({
+                    'file_path': file_path,
+                    'flagged_categories': safety_result['flagged_categories'],
+                    'confidence': safety_result['confidence'],
+                    'moderation_labels': safety_result['moderation_labels']
+                })
+                
+                # Delete unsafe image immediately
+                try:
+                    os.remove(file_path)
+                    print(f"   Deleted unsafe image: {os.path.basename(file_path)}")
+                except Exception as e:
+                    print(f"   Warning: Failed to delete {file_path}: {e}")
+                
+                continue  # Skip encoding this image
+            
+            print(f"✓ Image passed safety check")
+            
+        except Exception as e:
+            print(f"⚠ Safety check failed (will block): {e}")
+            # Fail closed - if safety check errors, don't return the image
+            safety_violations.append({
+                'file_path': file_path,
+                'flagged_categories': ['SAFETY_CHECK_ERROR'],
+                'confidence': 0.0,
+                'error': str(e)
+            })
+            continue
+        
+        # ============================================
+        # LAYER 4: Upload to S3/R2 for audit trail
+        # ============================================
+        try:
+            print(f"📤 Uploading to S3 for audit trail...")
+            s3_url = upload_safe_image(
+                file_path=file_path,
+                user_id=user_id,
+                prompt=prompt,
+                metadata={
+                    'safety_confidence': safety_result['confidence'],
+                    'checked_at': safety_result['checked_at']
+                }
+            )
+            if s3_url:
+                print(f"   ✓ Uploaded: {s3_url}")
+        except Exception as e:
+            # S3 upload is non-critical - log but don't fail
+            print(f"   ⚠ S3 upload failed (non-critical): {e}")
+        
+        # ============================================
+        # Image is safe - proceed with encoding
+        # ============================================
         img_data, used_path = encode_image(file_path, img_url)
         
         if img_data:
@@ -190,6 +262,13 @@ def process_results(result_data):
             os.remove(path)
         except Exception as e:
             print(f"Cleanup warning: {e}")
+    
+    # Log safety violations summary
+    if safety_violations:
+        print(f"\n⚠ SAFETY SUMMARY: {len(safety_violations)} image(s) blocked")
+        for violation in safety_violations:
+            categories = violation.get('flagged_categories', [])
+            print(f"   - {os.path.basename(violation['file_path'])}: {', '.join(categories)}")
     
     return images
 
@@ -209,6 +288,7 @@ def handler(event):
         if not prompt:
             return {"error": "Prompt is required", "progress": 0}
         
+        user_id = job_input.get("user_id", "unknown")  # Extract user_id for audit trail
         num_images = job_input.get("image_number") or job_input.get("num_images", 1)
         negative_prompt = job_input.get("negative_prompt", "")
         base_model = job_input.get("base_model_name", "onlyfornsfw118_v20.safetensors")
@@ -257,8 +337,8 @@ def handler(event):
         # Allow disk I/O to complete
         time.sleep(1)
         
-        # Process and encode images
-        images = process_results(result)
+        # Process and encode images (with safety check and S3 upload)
+        images = process_results(result, user_id=user_id, prompt=prompt)
         
         if not images:
             clean()
