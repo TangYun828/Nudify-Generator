@@ -90,6 +90,14 @@ class AWSRekognitionChecker:
     
     def __init__(self):
         """Initialize AWS Rekognition client"""
+        # Log which safety mode is active
+        logger.info(f"🔧 Safety Checker Mode: {self.MODE.upper()}")
+        if self.MODE == 'permissive_nsfw':
+            logger.warning("⚠️  PERMISSIVE NSFW MODE ENABLED - Will allow explicit content")
+            logger.warning("⚠️  Ensure age verification and legal review are in place!")
+        else:
+            logger.info("✓ STRICT MODE ENABLED - Will block all adult content")
+        
         aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
         aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
         aws_region = os.getenv('AWS_REGION', 'us-east-1')
