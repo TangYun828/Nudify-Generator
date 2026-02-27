@@ -1,0 +1,25 @@
+# Minimal requirements for user management backend only
+# For full Fooocus integration, use requirements_versions.txt
+
+# Database & ORM
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+alembic==1.13.0
+
+# Web Framework
+fastapi==0.109.0
+uvicorn==0.27.0
+python-multipart==0.0.6
+
+# Authentication & Security
+PyJWT==2.8.1
+passlib==1.7.4
+bcrypt==4.1.1
+
+# Email & Validation
+email-validator==2.1.0
+pydantic==2.5.0
+
+# Environment & Utilities
+python-dotenv==1.0.0
+httpx==0.27.0

@@ -1,347 +1,498 @@
-# Integration Guide: Nudify User Management + Fooocus
+# Complete Integration Guide: User Management + Age Verification
 
-## Overview
+## 📊 System Overview
 
-The integrated handler combines:
-- **Fooocus**: Image generation (existing functionality)
-- **FastAPI**: REST API with user endpoints
-- **PostgreSQL**: User accounts, credits, usage tracking
-- **JWT Authentication**: Secure token-based auth
-
-## File Structure
+Your complete user management system with legal age verification now includes:
 
 ```
-Nudify-Generator/
-├── handler_integrated.py      # NEW: Combined FastAPI + RunPod handler
-├── handler.py                 # ORIGINAL: RunPod serverless handler (backup)
-├── database.py                # COPIED: Supabase PostgreSQL config
-├── security.py                # COPIED: Auth, tokens, password hashing
-├── schemas.py                 # COPIED: Pydantic request/response models
-├── db_models/                 # COPIED: SQLAlchemy models
-│   ├── __init__.py
-│   ├── user.py
-│   ├── credits.py
-│   └── usage_log.py
-└── .env                       # COPIED: Supabase credentials
+┌─────────────────────────────────────────────────────────┐
+│   Frontend (HTML/Vue)                                   │
+│  - Login page                                           │
+│  - Register page                                        │
+│  - Age verification modal                               │
+│  - App.html (protected by auth)                         │
+└──────────────────┬──────────────────────────────────────┘
+                   │ JWT Token
+                   ▼
+┌─────────────────────────────────────────────────────────┐
+│   API Gateway (handler.py / FastAPI)                    │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ /auth (register, login, refresh, logout)         │  │
+│  │ /user (profile, api-key)                         │  │
+│  │ /credits (balance, usage, stats)                 │  │
+│  │ /verification (yoti, veriff, persona, callback)  │  │
+│  │ /v1/engine/generate (check is_verified)          │  │
+│  └──────────────────────────────────────────────────┘  │
+└──────────────────┬──────────────────────────────────────┘
+                   │ SQL Queries
+                   ▼
+┌─────────────────────────────────────────────────────────┐
+│   Supabase PostgreSQL Database                          │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ users (id, email, is_verified, verification_*) │  │
+│  │ credits (user_id, remaining, limit)              │  │
+│  │ age_verifications (user_id, provider, status)    │  │
+│  │ usage_logs (user_id, endpoint, status)           │  │
+│  └──────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
 ```
 
-## Setup
+---
 
-### 1. Copy Files (Already Done)
-- User management code from `nudify-backend/` copied to `Nudify-Generator/`
-- Environment variables (`.env`) configured with Supabase credentials
+## 🔗 How to Integrate into handler.py
 
-### 2. Install Dependencies
+### Current handler.py Structure
 
-Add to `requirements_versions.txt`:
+Your handler.py currently handles Fooocus image generation. We need to add:
+1. FastAPI initialization
+2. Database setup
+3. Route registration
+4. Middleware setup
+
+### Step 1: Add Import Statements
+
+Add to top of `handler.py`:
+
+```python
+from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+
+# Import all routes
+from routes import auth, user, credits, verification
+from middleware.auth import get_current_user
+from database import init_db, get_db, Base, engine
+from db_models import User, Credits, AgeVerification, UsageLog
 ```
-fastapi==0.109.0
-uvicorn==0.28.0
-python-dotenv==1.0.0
-sqlalchemy==2.0.23
-psycopg2-binary==2.9.11
-PyJWT==2.8.1
-passlib==1.7.4
-bcrypt==4.1.1
-email-validator==2.0.0
+
+### Step 2: Initialize FastAPI App
+
+```python
+# Create FastAPI application
+app = FastAPI(
+    title="Nudify API",
+    description="NSFW AI Image Generation with Age Verification",
+    version="2.0.0"
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change to specific domains in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize database on startup
+@app.on_event("startup")
+async def startup():
+    print("Initializing database...")
+    init_db()
+    print("✓ Database ready")
+    
+    # Start Fooocus API as usual
+    print("Starting Fooocus API...")
+    # ... your existing Fooocus startup code
 ```
 
-### 3. Environment Configuration
+### Step 3: Register Routes
 
-The `.env` file already configured:
+```python
+# Include authentication routes
+app.include_router(auth.router)
+app.include_router(user.router)
+app.include_router(credits.router)
+app.include_router(verification.router)
+
+# Your existing /v1/engine/generate endpoint needs update
 ```
-SUPABASE_URL=https://fldcxpaudayylsirlghs.supabase.co
-SUPABASE_DB_PASSWORD=WfxfQ9ng7DTJHeuV
-SUPABASE_SERVICE_ROLE_KEY=[JWT token]
-SECRET_KEY=nudify_secret_key_change_this_in_production_8x7y9z2w3q4r5t6u
-DATABASE_URL=postgresql://postgres.fldcxpaudayylsirlghs:***@aws-0-us-west-2.pooler.supabase.com:5432/postgres
-FOOOCUS_API_PORT=7866
+
+### Step 4: Update Image Generation Endpoint
+
+The existing `/v1/engine/generate/` needs authentication:
+
+```python
+@app.post("/v1/engine/generate/")
+async def generate_image(
+    request: GenerateRequest,
+    current_user: User = Depends(get_current_user),  # NEW: Require authentication
+    db: Session = Depends(get_db)  # NEW: Database session
+):
+    """
+    Generate NSFW image with authentication and age verification
+    """
+    
+    # NEW: Check age verification (LEGAL REQUIREMENT)
+    if not current_user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Age verification required before image generation",
+            headers={"X-Requires-Verification": "true"}
+        )
+    
+    # NEW: Check if verification is expired
+    if current_user.verification_expires_at:
+        if datetime.utcnow() > current_user.verification_expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Age verification expired, re-verification required"
+            )
+    
+    # NEW: Check credits
+    credits_record = db.query(Credits).filter(
+        Credits.user_id == current_user.id
+    ).first()
+    
+    if not credits_record or credits_record.credits_remaining < 1.0:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Insufficient credits",
+            headers={"X-Insufficient-Credits": "true"}
+        )
+    
+    # NEW: Create usage log
+    import time
+    start_time = time.time()
+    
+    usage_log = UsageLog(
+        user_id=current_user.id,
+        endpoint="/v1/engine/generate/",
+        method="POST",
+        prompt=request.prompt,
+        negative_prompt=request.negative_prompt,
+        image_count=request.image_number,
+        aspect_ratio=request.aspect_ratio,
+        status="in_progress"
+    )
+    db.add(usage_log)
+    db.commit()
+    
+    try:
+        # Your existing Fooocus generation code here
+        # ... generate images ...
+        
+        # After successful generation:
+        generation_time = time.time() - start_time
+        
+        # Deduct credits
+        credits_to_use = request.image_number * 1.0  # 1 credit per image
+        credits_record.deduct_credits(credits_to_use)
+        
+        # Update usage log
+        usage_log.status = "success"
+        usage_log.generation_time_seconds = generation_time
+        usage_log.output_image_count = len(images)
+        usage_log.completed_at = datetime.utcnow()
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "output": {"images": images},  # Your existing response
+            "user": {
+                "credits_remaining": credits_record.credits_remaining,
+                "credits_used": credits_to_use
+            }
+        }
+        
+    except Exception as e:
+        # Log failure
+        usage_log.status = "failed"
+        usage_log.error_message = str(e)
+        usage_log.completed_at = datetime.utcnow()
+        db.commit()
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Image generation failed"
+        )
+```
+
+### Step 5: Add Health Check Endpoint
+
+```python
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "ok",
+        "version": "2.0.0",
+        "services": {
+            "api": "running",
+            "database": "running",
+            "fooocus": "running"
+        }
+    }
+
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "name": "Nudify API",
+        "version": "2.0.0",
+        "endpoints": {
+            "auth": "/auth/*",
+            "user": "/user/*",
+            "credits": "/credits/*",
+            "verification": "/verification/*",
+            "generate": "/v1/engine/generate",
+            "docs": "/docs",
+            "health": "/health"
+        }
+    }
+```
+
+---
+
+## 🔄 Complete Flow Diagram
+
+```
+User Registration
+    ↓
+POST /auth/register
+    ↓
+User created in database
+Credits account created (10 credits free tier)
+JWT tokens returned
+    ↓
+User Sees Login Form
+    ↓
+POST /auth/login
+    ↓
+JWT Access Token + Refresh Token returned
+    ↓
+User Clicks "Generate Image"
+    ↓
+Frontend checks: GET /verification/status
+    ↓ Response: is_verified = false
+    ↓
+Show Age Verification Modal
+User selects provider (Yoti/Veriff/Persona)
+    ↓
+POST /verification/yoti/initiate
+    ↓
+Returns: { status_url: "https://yoti.com/share/..." }
+    ↓
+User redirected to Yoti in new window
+User scans ID + Face
+Yoti verifies (takes 1-5 seconds)
+    ↓
+Yoti redirects back to your site
+    ↓
+POST /verification/yoti/callback (from Yoti servers)
+    ↓
+UPDATE users SET is_verified = true
+    ↓
+User refreshes page, verification complete
+    ↓
+POST /v1/engine/generate/ with Bearer token
+    ↓
+Check: is_verified = true? ✓
+Check: credits >= 1? ✓
+    ↓
+Generate image (takes 30-60 seconds)
+    ↓
+Deduct 1 credit
+Log usage
+Return image
+    ↓
+User can download image
+Credits remaining shown
+```
+
+---
+
+## 📋 Required Environment Variables
+
+Create `.env` file:
+
+```bash
+# Supabase
+SUPABASE_URL=https://xxxxx.supabase.co
+SUPABASE_DB_PASSWORD=your_password
+SUPABASE_KEY=your_service_role_key
+
+# JWT
+SECRET_KEY=your_super_secret_key_change_in_production
+
+# Fooocus
+FOOOCUS_API_URL=http://127.0.0.1:7866
+FOOOCUS_API_KEY=your_api_key
+
+# Verification Provider (choose one or multiple)
+YOTI_SDK_ID=your_yoti_sdk_id
+YOTI_PEM_KEY=your_yoti_pem_key
+
+VERIFF_API_KEY=your_veriff_api_key
+
+PERSONA_API_KEY=your_persona_api_key
+PERSONA_TEMPLATE_ID=your_template_id
+
+# Server Config
+API_PORT=7866
+API_HOST=0.0.0.0
 DEBUG=False
 ```
 
-## Running
+---
 
-### Local Testing (FastAPI)
+## 🧪 Testing the Complete System
+
+### 1. Setup Database
+
 ```bash
-cd Nudify-Generator
-python handler_integrated.py
+python setup_db.py
 ```
 
-Starts:
-- Fooocus API on `http://127.0.0.1:7866`
-- FastAPI on `http://localhost:8000`
-- Visit `http://localhost:8000/docs` for interactive API documentation
+Output should show:
+- ✓ Environment variables
+- ✓ Database connection
+- ✓ Tables created
+- ✓ Test user created
 
-### Production (RunPod)
+### 2. Start API Server
+
 ```bash
-python handler_integrated.py
+# Using handler.py
+python handler.py
+
+# Or using uvicorn
+python -m uvicorn handler:app --reload --host 0.0.0.0 --port 7866
 ```
 
-When installed on RunPod with `runpod` SDK available:
-- Automatically runs in serverless mode
-- Exports `handler()` function for RunPod
-- Uses same codebase as local
+### 3. Test Endpoints
 
-## API Endpoints
-
-### Authentication
-
-**Register User**
 ```bash
-POST /auth/register
-Content-Type: application/json
+# 1. Check API is running
+curl http://localhost:7866/health
 
-{
-  "email": "user@example.com",
-  "username": "username",
-  "password": "password123"
-}
-
-Response:
-{
-  "message": "User registered successfully",
-  "user_id": "uuid"
-}
-```
-
-**Login**
-```bash
-POST /auth/login
-Content-Type: application/json
-
-{
-  "email": "user@example.com",
-  "password": "password123"
-}
-
-Response:
-{
-  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-  "token_type": "bearer",
-  "user_id": "uuid"
-}
-```
-
-### User Profile
-
-**Get Profile**
-```bash
-GET /user/profile
-Authorization: Bearer <token>
-
-Response:
-{
-  "user_id": "uuid",
-  "email": "user@example.com",
-  "username": "username",
-  "credits": 10,
-  "created_at": "2026-02-26T00:00:00"
-}
-```
-
-### Image Generation
-
-**Generate Image(s)**
-```bash
-POST /generate/image
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "prompt": "A beautiful portrait of a woman",
-  "negative_prompt": "low quality, blurry",
-  "image_number": 1,
-  "base_model_name": "onlyfornsfw118_v20.safetensors",
-  "aspect_ratio": "1024*1024",
-  "output_format": "png"
-}
-
-Response:
-{
-  "images": ["base64_encoded_image"],
-  "credits_used": 1,
-  "credits_remaining": 9,
-  "message": "Generated 1 image(s)"
-}
-```
-
-**Get Credit Balance**
-```bash
-GET /credits/balance
-Authorization: Bearer <token>
-
-Response:
-{
-  "balance": 9,
-  "total_earned": 10,
-  "total_spent": 1
-}
-```
-
-## Credit System
-
-**Default Values:**
-- Free credits on signup: 10
-- Cost per image: 1 credit
-- Users must have sufficient credits before generation
-
-**Credit Deduction Flow:**
-1. User requests image generation
-2. System checks user has enough credits
-3. Request sent to Fooocus API
-4. On success: Credits deducted, usage logged
-5. On failure: No credits deducted, error logged
-
-## Database Schema
-
-### Users Table
-```sql
-- id (UUID PRIMARY KEY)
-- email (VARCHAR UNIQUE)
-- username (VARCHAR)
-- hashed_password (VARCHAR)
-- created_at (TIMESTAMP)
-- updated_at (TIMESTAMP)
-```
-
-### Credits Table
-```sql
-- id (UUID PRIMARY KEY)
-- user_id (UUID FK -> users)
-- balance (DECIMAL)
-- total_earned (DECIMAL)
-- total_spent (DECIMAL)
-- updated_at (TIMESTAMP)
-```
-
-### Usage Logs Table
-```sql
-- id (UUID PRIMARY KEY)
-- user_id (UUID FK -> users)
-- endpoint (VARCHAR)
-- method (VARCHAR)
-- prompt (TEXT)
-- credits_deducted (DECIMAL)
-- status (VARCHAR)
-- request_metadata (JSON)
-- created_at (TIMESTAMP)
-- completed_at (TIMESTAMP)
-```
-
-## RunPod Serverless Handler
-
-The `handler()` function supports both:
-
-**1. FastAPI Routes** (REST API)
-```
-POST /auth/register
-POST /auth/login
-GET /user/profile
-POST /generate/image
-GET /credits/balance
-```
-
-**2. RunPod Event Format** (backward compatible)
-```json
-{
-  "input": {
-    "prompt": "A beautiful portrait",
-    "image_number": 1,
-    "token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-    "base_model_name": "onlyfornsfw118_v20.safetensors",
-    "negative_prompt": "low quality",
-    "aspect_ratio": "1024*1024",
-    "output_format": "png"
-  }
-}
-```
-
-## Testing Workflow
-
-### 1. Register
-```bash
-curl -X POST "http://localhost:8000/auth/register" \
+# 2. Register new user
+curl -X POST http://localhost:7866/auth/register \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "test@example.com",
-    "username": "testuser",
+    "email": "newuser@example.com",
+    "username": "newuser",
     "password": "password123"
   }'
-```
 
-### 2. Login
-```bash
-curl -X POST "http://localhost:8000/auth/login" \
+# Save the access_token from response
+
+# 3. Try to generate image (should fail - not verified)
+curl -X POST http://localhost:7866/v1/engine/generate/ \
+  -H "Authorization: Bearer <access_token>" \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "test@example.com",
-    "password": "password123"
-  }'
-# Copy the token from response
+  -d '{"prompt": "test"}'
+
+# Response: 403 Age verification required
+
+# 4. Get verification status
+curl -X GET http://localhost:7866/verification/status \
+  -H "Authorization: Bearer <access_token>"
+
+# Response: is_verified = false
+
+# 5. Check API docs
+# Open http://localhost:7866/docs in browser
 ```
 
-### 3. Generate Image
-```bash
-curl -X POST "http://localhost:8000/generate/image" \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "A beautiful sunset",
-    "image_number": 1
-  }'
+---
+
+## 📁 Final File Structure
+
+```
+nudify-backend/
+├── handler.py                          # UPDATED: Main FastAPI app
+├── database.py                         # Database connection
+├── security.py                         # JWT & password
+├── schemas.py                          # API schemas
+├── schemas_verification.py             # Verification schemas
+├── setup_db.py                         # DB initialization
+├── 
+├── db_models/
+│   ├── __init__.py
+│   ├── user.py                         # UPDATED: added is_verified
+│   ├── credits.py
+│   ├── usage_log.py
+│   └── age_verification.py            # NEW
+│
+├── routes/
+│   ├── __init__.py                     # UPDATED: added verification
+│   ├── auth.py
+│   ├── user.py
+│   ├── credits.py
+│   └── verification.py                 # NEW
+│
+├── middleware/
+│   ├── __init__.py
+│   └── auth.py
+│
+└── docs/
+    ├── SUPABASE_SETUP.md
+    ├── AUTHENTICATION_API_COMPLETE.md
+    ├── AGE_VERIFICATION_COMPLIANCE.md   # NEW
+    └── API_ENDPOINTS_REFERENCE.md
 ```
 
-### 4. Check Balance
-```bash
-curl -X GET "http://localhost:8000/credits/balance" \
-  -H "Authorization: Bearer <TOKEN>"
-```
+---
 
-## Troubleshooting
+## ✅ Integration Checklist
 
-### Database Connection Failed
-- Check `.env` has correct `SUPABASE_DB_PASSWORD`
-- Verify connection string in `DATABASE_URL`
-- Ensure Windows hosts file has `52.8.172.168 db.fldcxpaudayylsirlghs.supabase.co`
+### Database
+- [x] User model with is_verified fields
+- [x] AgeVerification model created
+- [x] Credits model
+- [x] UsageLog model
+- [ ] Run setup_db.py to create tables
 
-### Fooocus API Not Ready
-- Allow 60+ seconds for model loading on first startup
-- Check logs for model download status
-- Ensure sufficient disk space for models
+### Backend Routes
+- [x] /auth/* endpoints
+- [x] /user/* endpoints
+- [x] /credits/* endpoints
+- [x] /verification/* endpoints
+- [ ] Update /v1/engine/generate/ for auth & credits
 
-### Credit Deduction Not Working
-- Verify user has credits with GET `/credits/balance`
-- Check DATABASE_URL and user table exists
-- Review usage_logs table for error entries
+### Middleware
+- [x] JWT validation
+- [ ] Add to all protected endpoints
 
-## Migration from Original Handler
+### Frontend
+- [ ] Create login.html
+- [ ] Create register.html
+- [ ] Create verification modal
+- [ ] Update app.html to require auth
+- [ ] Store JWT tokens
 
-The original `handler.py` is preserved. To switch:
+### Testing
+- [ ] Register new user
+- [ ] Login
+- [ ] Check verification status
+- [ ] Try image generation (should fail)
+- [ ] Complete age verification
+- [ ] Try image generation (should work)
 
-**Use integrated version (recommended):**
-```bash
-# In index.json or deployment config
-"handler": "handler_integrated.handler"
-```
+### Deployment
+- [ ] Set environment variables
+- [ ] Configure verification provider
+- [ ] Update Terms & Privacy Policy
+- [ ] Test in production
+- [ ] Enable payment processing
 
-**Use original version (if needed):**
-```bash
-"handler": "handler.handler"
-```
+---
 
-## Next Steps
+## 🎯 Next Phase: Frontend Integration
 
-1. Deploy to RunPod serverless
-2. Configure custom domain
-3. Set up age verification provider integration
-4. Implement admin dashboard for analytics
-5. Add credit purchase system (optional)
+After backend is integrated, create:
 
-## Support
+1. **login.html** - Login form
+2. **register.html** - Registration form
+3. **verification-modal.html** - Age verification UI
+4. **dashboard.html** - User dashboard
 
-For issues:
-1. Check logs: `docker logs <container_id>`
-2. Review DATABASE_URL in console output
-3. Verify JWT tokens: https://jwt.io
-4. Test Fooocus directly at `http://localhost:7866/docs`
-5. Check Supabase dashboard for table data
+These will integrate with the API using JavaScript JWT management and fetch API calls.
+
+---
+
+**Total Implementation Time: ~4-6 hours**
+
+Ready to integrate? Let me know! 🚀

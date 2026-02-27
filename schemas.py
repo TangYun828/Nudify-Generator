@@ -192,52 +192,6 @@ class SuccessResponse(BaseModel):
 
 
 # =======================
-# Image Generation Schemas
-# =======================
-
-class GenerateImageRequest(BaseModel):
-    """Schema for image generation request"""
-    prompt: str = Field(..., min_length=1, max_length=1000)
-    negative_prompt: Optional[str] = Field(None, max_length=1000)
-    image_number: Optional[int] = Field(1, ge=1, le=10)
-    base_model_name: Optional[str] = "onlyfornsfw118_v20.safetensors"
-    aspect_ratio: Optional[str] = "1024*1024"
-    output_format: Optional[str] = "png"
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "prompt": "A beautiful woman in bikini",
-                "negative_prompt": "low quality, blurry",
-                "image_number": 1,
-                "base_model_name": "onlyfornsfw118_v20.safetensors",
-                "aspect_ratio": "1024*1024",
-                "output_format": "png"
-            }
-        }
-
-
-class UserProfile(BaseModel):
-    """Schema for user profile simple response"""
-    user_id: UUID
-    email: str
-    username: str
-    credits: float
-    created_at: datetime
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "user_id": "550e8400-e29b-41d4-a716-446655440000",
-                "email": "user@example.com",
-                "username": "john_doe",
-                "credits": 10.0,
-                "created_at": "2026-02-26T10:30:00"
-            }
-        }
-
-
-# =======================
 # Usage Log Schemas
 # =======================
 
