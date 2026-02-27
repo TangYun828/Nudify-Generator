@@ -54,3 +54,10 @@ user_path_config-deprecated.txt
 /auth.json
 .DS_Store
 inputs
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem

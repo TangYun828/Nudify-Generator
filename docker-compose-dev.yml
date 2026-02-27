@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  nudify-handler-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    container_name: nudify-handler-dev
+    
+    # Mount handler code directly for live code updates
+    volumes:
+      # Main handler - changes take effect without rebuild
+      - ./handler.py:/content/handler.py:rw
+      
+      # Optional: Mount other Python files if needed
+      # - ./utils:/content/utils:rw
+      
+      # Output directory for generated images
+      - ./test_outputs:/content/app/outputs:rw
+    
+    # Environment variables
+    environment:
+      # Optional: Set these if testing with auth
+      # - X_API_KEY=${X_API_KEY}
+      
+      # Logging
+      - PYTHONUNBUFFERED=1
+    
+    # Port mappings (if handler exposes any ports)
+    # ports:
+    #   - "8000:8000"
+    #   - "7866:7866"
+    
+    # Keep container running for debugging
+    stdin_open: true
+    tty: true
+    
+    # Override entrypoint to allow inspection
+    # entrypoint: /bin/bash
+    
+    # Or run handler normally
+    entrypoint: /bin/bash -c "cd /content && python -u handler.py"
+    
+    # Restart on failure
+    restart: no
+
+# Usage:
+# docker-compose -f docker-compose-dev.yml up
+# docker-compose -f docker-compose-dev.yml logs -f
+# docker-compose -f docker-compose-dev.yml down
