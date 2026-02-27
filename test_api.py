@@ -1,0 +1,264 @@
+"""
+Test FastAPI Server (without Fooocus)
+For local testing of authentication and API endpoints
+"""
+
+import os
+import sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables
+env_path = Path(__file__).parent / '.env'
+load_dotenv(dotenv_path=env_path)
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+
+from database import SessionLocal, init_db
+from security import PasswordHandler, JWTHandler
+from schemas import UserRegister, UserLogin, GenerateImageRequest
+from db_models.user import User
+from db_models.credits import Credits
+from db_models.usage_log import UsageLog
+
+# ============================================================
+# FastAPI Setup
+# ============================================================
+
+app = FastAPI(
+    title="Nudify API (Test Mode)",
+    description="NSFW Image Generation API - Testing Authentication",
+    version="1.0.0"
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+FREE_CREDITS_ON_SIGNUP = 10
+
+# ============================================================
+# Database Dependency
+# ============================================================
+
+def get_db():
+    """Get database session"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_current_user(
+    authorization: str = Header(None),
+    db=Depends(get_db)
+) -> User:
+    """Verify JWT token and return current user"""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
+    
+    try:
+        token = authorization.split(" ")[1] if " " in authorization else authorization
+        payload = JWTHandler.decode_token(token)
+        
+        if "error" in payload:
+            raise HTTPException(status_code=401, detail=payload["error"])
+        
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        
+        return user
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+# ============================================================
+# Health Check
+# ============================================================
+
+@app.get("/")
+def root():
+    """API root endpoint"""
+    return {
+        "message": "Nudify API Test Server",
+        "status": "running",
+        "docs": "/docs",
+        "mode": "test (Fooocus disabled)"
+    }
+
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "mode": "test"}
+
+
+# ============================================================
+# Authentication Endpoints
+# ============================================================
+
+@app.post("/auth/register")
+def register(user_data: UserRegister, db=Depends(get_db)):
+    """Register new user with free credits"""
+    # Check if email exists
+    existing = db.query(User).filter(User.email == user_data.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Create user
+    password_handler = PasswordHandler()
+    user = User(
+        email=user_data.email,
+        username=user_data.username,
+        password_hash=password_handler.hash_password(user_data.password)
+    )
+    
+    db.add(user)
+    db.flush()
+    
+    # Create credit account with free credits
+    credits = Credits(
+        user_id=user.id,
+        credits_remaining=FREE_CREDITS_ON_SIGNUP,
+        credits_used_total=0.0
+    )
+    db.add(credits)
+    db.commit()
+    
+    return {"message": "User registered successfully", "user_id": str(user.id)}
+
+
+@app.post("/auth/login")
+def login(user_data: UserLogin, db=Depends(get_db)):
+    """Login user and return JWT token"""
+    user = db.query(User).filter(User.email == user_data.email).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    password_handler = PasswordHandler()
+    if not password_handler.verify_password(user_data.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Generate JWT token
+    token = JWTHandler.create_access_token({"sub": str(user.id)})
+    
+    return {"access_token": token, "token_type": "bearer", "user_id": str(user.id)}
+
+
+@app.get("/user/profile")
+def get_profile(current_user: User = Depends(get_current_user), db=Depends(get_db)):
+    """Get current user profile"""
+    credits = db.query(Credits).filter(Credits.user_id == current_user.id).first()
+    
+    return {
+        "user_id": str(current_user.id),
+        "email": current_user.email,
+        "username": current_user.username,
+        "credits": credits.credits_remaining if credits else 0,
+        "created_at": current_user.created_at.isoformat()
+    }
+
+
+@app.get("/credits/balance")
+def get_credits(current_user: User = Depends(get_current_user), db=Depends(get_db)):
+    """Get user credit balance"""
+    credits = db.query(Credits).filter(Credits.user_id == current_user.id).first()
+    
+    return {
+        "balance": credits.credits_remaining if credits else 0,
+        "total_used": credits.credits_used_total if credits else 0
+    }
+
+
+@app.post("/generate/image")
+def generate_image_mock(
+    request_data: GenerateImageRequest,
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db)
+):
+    """Mock image generation (returns test response)"""
+    
+    # Get user credits
+    credits = db.query(Credits).filter(Credits.user_id == current_user.id).first()
+    if not credits:
+        raise HTTPException(status_code=400, detail="No credit account found")
+    
+    # Calculate total cost
+    num_images = request_data.image_number or 1
+    total_cost = num_images * 1  # 1 credit per image
+    
+    # Check if user has enough credits
+    if credits.credits_remaining < total_cost:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Insufficient credits. Need {total_cost}, have {credits.credits_remaining}"
+        )
+    
+    # Deduct credits
+    credits.credits_remaining -= total_cost
+    credits.credits_used_total += total_cost
+    
+    # Log usage
+    usage_log = UsageLog(
+        user_id=current_user.id,
+        endpoint="/generate/image",
+        method="POST",
+        prompt=request_data.prompt,
+        credits_deducted=total_cost,
+        status="completed",
+        request_metadata={"num_images": num_images, "test_mode": True}
+    )
+    
+    db.add(usage_log)
+    db.commit()
+    
+    return {
+        "message": "TEST MODE: Fooocus not available. This would generate images in production.",
+        "credits_used": total_cost,
+        "credits_remaining": credits.credits_remaining,
+        "prompt": request_data.prompt,
+        "num_images": num_images,
+        "note": "In production, this endpoint returns base64-encoded images"
+    }
+
+
+# ============================================================
+# Startup
+# ============================================================
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print("Nudify API Test Server")
+    print("=" * 60)
+    print("Mode: Testing (Fooocus disabled)")
+    print("Initializing database...")
+    
+    try:
+        init_db()
+        print("✓ Database initialized")
+    except Exception as e:
+        print(f"⚠ Database warning: {e}")
+    
+    print("=" * 60)
+    print("Starting FastAPI server on http://localhost:8000")
+    print("=" * 60)
+    print("API Documentation: http://localhost:8000/docs")
+    print("ReDoc: http://localhost:8000/redoc")
+    print("=" * 60)
+    
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
