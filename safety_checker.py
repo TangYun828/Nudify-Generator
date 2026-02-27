@@ -41,11 +41,15 @@ class SafetyResult:
 class AWSRekognitionChecker:
     """AWS Rekognition content moderation checker"""
     
+    # Configuration mode: 'strict' or 'permissive_nsfw'
+    MODE = os.getenv('SAFETY_CHECKER_MODE', 'strict')
+    
     # Confidence thresholds (AWS Rekognition DetectModerationLabels range: 0-100)
     CONFIDENCE_THRESHOLD = 75.0  # Flag if ≥75% confidence of policy violation
     
-    # Critical categories that should be blocked immediately
-    CRITICAL_CATEGORIES = {
+    # STRICT MODE: Block all adult content
+    # Used for age-restricted services or when legal risk is high
+    CRITICAL_CATEGORIES_STRICT = {
         'Explicit Nudity',
         'Graphic Male Nudity',
         'Graphic Female Nudity',
@@ -57,6 +61,25 @@ class AWSRekognitionChecker:
         'Hate Symbols',
         'Drugs'
     }
+    
+    # PERMISSIVE NSFW MODE: Allow adult content, block only illegal/harmful
+    # Use ONLY if:
+    # 1. You have proper age verification (18+)
+    # 2. Terms of Service explicitly allow NSFW
+    # 3. Payment processor approves (Stripe has restrictions)
+    # 4. You log all generations for legal compliance
+    # 5. You're in a jurisdiction that permits this
+    CRITICAL_CATEGORIES_PERMISSIVE = {
+        'Violence',           # Block violent content
+        'Visually Disturbing',  # Block gore/disturbing imagery
+        'Hate Symbols',       # Block hate/extremist content
+        'Drugs',              # Block drug content
+        # NOTE: Does NOT include 'Explicit Nudity' or sexual content
+        # These are allowed in permissive mode
+    }
+    
+    # Select active categories based on mode
+    CRITICAL_CATEGORIES = CRITICAL_CATEGORIES_PERMISSIVE if MODE == 'permissive_nsfw' else CRITICAL_CATEGORIES_STRICT
     
     # Subcategories to monitor (lower threshold)
     MONITORED_SUBCATEGORIES = {
