@@ -27,9 +27,11 @@ from db_models.credits import Credits
 from db_models.usage_log import UsageLog
 from safety_checker import check_image_safety, check_image_safety_bytes
 from s3_uploader import upload_safe_image
+from compliance_watermark import compliance_watermark
 import base64
 import io
 from PIL import Image, ImageDraw, ImageFont
+import hashlib
 
 # ============================================================
 # FastAPI Setup
@@ -270,8 +272,6 @@ def runpod_simulate(
     user_id = input_data.get("user_id", str(current_user.id))
     num_images = input_data.get("image_number", 1)
     size = input_data.get("size", "1024x1024")
-    watermark_enabled = bool(input_data.get("watermark", False))
-    watermark_text = str(input_data.get("watermark_text", "AI GENERATED"))
     requested_format = str(input_data.get("format", "png")).lower()
     if requested_format == "jpg":
         img_format = "JPEG"
@@ -295,8 +295,7 @@ def runpod_simulate(
     print(f"   Size: {width}x{height}")
     print(f"   Format: {response_format}")
     print(f"   Watermark: {'ON' if watermark_enabled else 'OFF'}")
-    
-    # Generate mock images (in production, Fooocus would generate these)
+    these)
     images = []
     
     for i in range(num_images):
@@ -330,26 +329,6 @@ def runpod_simulate(
                 draw.text((width // 20, y_position), line, fill=(255, 255, 255))
                 y_position += line_height
 
-            # Apply visible watermark when requested
-            if watermark_enabled:
-                watermark_font_size = max(18, min(width, height) // 20)
-                watermark_padding = max(16, watermark_font_size // 2)
-                approx_char_width = max(8, watermark_font_size // 2)
-                watermark_box_width = (len(watermark_text) * approx_char_width) + (watermark_padding * 2)
-                watermark_box_height = watermark_font_size + (watermark_padding * 2)
-                box_x = max(0, width - watermark_box_width - watermark_padding)
-                box_y = max(0, height - watermark_box_height - watermark_padding)
-
-                draw.rectangle(
-                    [box_x, box_y, box_x + watermark_box_width, box_y + watermark_box_height],
-                    fill=(0, 0, 0)
-                )
-                draw.text(
-                    (box_x + watermark_padding, box_y + watermark_padding),
-                    watermark_text,
-                    fill=(255, 255, 255)
-                )
-            
             # Save to bytes with requested format
             img_byte_arr = io.BytesIO()
             img.save(img_byte_arr, format=img_format)
@@ -368,15 +347,28 @@ def runpod_simulate(
             
             print(f"   ✓ Image {i+1} passed safety check (confidence: {safety_result['confidence']:.1f}%)")
             
-            # Upload to S3 (Layer 4) - skip for now since we have bytes not file path
-            # TODO: Implement bytes-based S3 upload or save to temp file
+            # Apply legal compliance watermarking (California SB 942 / New York 2026)
+            print(f"\n📜 Applying compliance watermarks...")
+            print(f"   - C2PA Manifest: Cryptographic proof of AI generation")
+            print(f"   - Latent watermark: Imperceptible, survives editing")
+            print(f"   - Visible badge: User-facing notice")
+            
+            watermarked_bytes = compliance_watermark.apply_full_compliance(
+                img_bytes, 
+                include_visible_badge=True
+            )
+            
+            print(f"   ✓ Watermarks applied (size: {len(watermarked_bytes)} bytes)")
+            
+            # Upload to S3 (Layer 4) - watermarked version
+            # TODO: Implement bytes-based S3 upload with watermarked image
             print(f"\n☁️  S3 audit upload skipped (bytes upload not implemented)...")
             
-            # Convert to base64 for response
-            img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+            # Convert to base64 for response (watermarked version)
+            img_base64 = base64.b64encode(watermarked_bytes).decode('utf-8')
             images.append(img_base64)
             
-            print(f"   ✓ Image {i+1} ready for delivery")
+            print(f"   ✓ Image {i+1} ready for delivery (with compliance watermarks)")
             
         except Exception as e:
             print(f"   ✗ Error processing image {i+1}: {e}")
