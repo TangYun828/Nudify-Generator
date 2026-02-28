@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  backend:
+    image: nudify-backend:prod
+    container_name: nudify-backend-prod
+    restart: always
+    
+    environment:
+      # Compliance Watermarking - From environment variables in prod
+      - C2PA_PRIVATE_KEY_BASE64=${C2PA_PRIVATE_KEY_BASE64}
+      - C2PA_CERT_BASE64=${C2PA_CERT_BASE64}
+      - WATERMARK_ENABLED=${WATERMARK_ENABLED:-true}
+      - VISIBLE_BADGE_ENABLED=${VISIBLE_BADGE_ENABLED:-true}
+      
+      # Production Configuration
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=info
+      
+      # Database & External Services
+      - DATABASE_URL=${DATABASE_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - RUNPOD_API_KEY=${RUNPOD_API_KEY}
+    
+    ports:
+      - "8000:8000"
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    networks:
+      - production
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    image: nudify-frontend:prod
+    container_name: nudify-frontend-prod
+    restart: always
+    
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://api.example.com}
+      - NEXT_PUBLIC_RUNPOD_URL=http://backend:8000/api/runpod/generate
+      - DATABASE_URL=${DATABASE_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-https://example.com}
+    
+    ports:
+      - "3000:3000"
+    
+    depends_on:
+      backend:
+        condition: service_healthy
+    
+    networks:
+      - production
+    
+    restart: always
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Nginx reverse proxy with SSL
+  nginx:
+    image: nginx:alpine
+    container_name: nudify-nginx-prod
+    restart: always
+    
+    ports:
+      - "80:80"
+      - "443:443"
+    
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl/:/etc/nginx/ssl/:ro
+    
+    depends_on:
+      - backend
+      - frontend
+    
+    networks:
+      - production
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  production:
+    driver: bridge
+
+volumes:
+  ssl:
