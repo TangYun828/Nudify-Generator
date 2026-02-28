@@ -14,7 +14,15 @@ import threading
 from runpod.serverless.utils.rp_cleanup import clean
 from safety_checker import check_image_safety
 from s3_uploader import upload_safe_image
-from compliance_watermark import compliance_watermark
+
+# Try to import watermarking module
+try:
+    from compliance_watermark import compliance_watermark
+    WATERMARKING_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠ Watermarking module not available: {e}")
+    compliance_watermark = None
+    WATERMARKING_AVAILABLE = False
 
 # Configuration
 FOOOCUS_API_URL = "http://127.0.0.1:7866"
@@ -144,16 +152,20 @@ def encode_image(file_path=None, img_url=None):
             with open(file_path, "rb") as f:
                 img_bytes = f.read()
             
-            # Apply watermarking to generated image
-            try:
-                watermarked_bytes = compliance_watermark.apply_full_compliance(
-                    img_bytes,
-                    include_visible_badge=True  # Add the "AI GENERATED" badge
-                )
-                print(f"   ✓ Watermarking applied: visible badge + C2PA metadata + latent watermark")
-            except Exception as e:
-                print(f"   ⚠ Watermarking failed (returning original): {e}")
-                watermarked_bytes = img_bytes  # Fallback to original if watermarking fails
+            # Apply watermarking if available
+            if WATERMARKING_AVAILABLE and compliance_watermark:
+                try:
+                    watermarked_bytes = compliance_watermark.apply_full_compliance(
+                        img_bytes,
+                        include_visible_badge=True  # Add the "AI GENERATED" badge
+                    )
+                    print(f"   ✓ Watermarking applied: visible badge + C2PA metadata + latent watermark")
+                except Exception as e:
+                    print(f"   ⚠ Watermarking failed (returning original): {e}")
+                    watermarked_bytes = img_bytes  # Fallback to original if watermarking fails
+            else:
+                print(f"   ℹ Watermarking not available, returning unwatermarked image")
+                watermarked_bytes = img_bytes
             
             data = base64.b64encode(watermarked_bytes).decode("utf-8")
             return data, file_path
@@ -167,15 +179,19 @@ def encode_image(file_path=None, img_url=None):
             if response.status_code == 200:
                 img_bytes = response.content
                 
-                # Apply watermarking to HTTP-fetched image
-                try:
-                    watermarked_bytes = compliance_watermark.apply_full_compliance(
-                        img_bytes,
-                        include_visible_badge=True
-                    )
-                    print(f"   ✓ Watermarking applied: visible badge + C2PA metadata + latent watermark")
-                except Exception as e:
-                    print(f"   ⚠ Watermarking failed (returning original): {e}")
+                # Apply watermarking if available
+                if WATERMARKING_AVAILABLE and compliance_watermark:
+                    try:
+                        watermarked_bytes = compliance_watermark.apply_full_compliance(
+                            img_bytes,
+                            include_visible_badge=True
+                        )
+                        print(f"   ✓ Watermarking applied: visible badge + C2PA metadata + latent watermark")
+                    except Exception as e:
+                        print(f"   ⚠ Watermarking failed (returning original): {e}")
+                        watermarked_bytes = img_bytes
+                else:
+                    print(f"   ℹ Watermarking not available, returning unwatermarked image")
                     watermarked_bytes = img_bytes
                 
                 data = base64.b64encode(watermarked_bytes).decode("utf-8")
