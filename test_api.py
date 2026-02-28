@@ -269,6 +269,14 @@ def runpod_simulate(
     prompt = input_data.get("prompt", "")
     user_id = input_data.get("user_id", str(current_user.id))
     num_images = input_data.get("image_number", 1)
+    size = input_data.get("size", "1024x1024")
+    img_format = input_data.get("format", "png").upper()
+    
+    # Parse size (e.g., "1536x640" -> width=1536, height=640)
+    try:
+        width, height = map(int, size.split('x'))
+    except (ValueError, AttributeError):
+        width, height = 1024, 1024  # Default fallback
     
     if not prompt:
         raise HTTPException(status_code=400, detail="Prompt is required")
@@ -276,20 +284,28 @@ def runpod_simulate(
     print(f"\n📥 Received request from user {user_id}")
     print(f"   Prompt: {prompt[:100]}...")
     print(f"   Images: {num_images}")
+    print(f"   Size: {width}x{height}")
+    print(f"   Format: {img_format}")
     
     # Generate mock images (in production, Fooocus would generate these)
     images = []
     
     for i in range(num_images):
         try:
-            # Create a simple test image with text
-            img = Image.new('RGB', (512, 512), color=(100, 100, 150))
+            # Create a simple test image with text (using requested dimensions)
+            img = Image.new('RGB', (width, height), color=(100, 100, 150))
             draw = ImageDraw.Draw(img)
+            
+            # Calculate text position based on image size
+            font_size = min(width, height) // 25  # Relative font size
             
             # Add text to image
             text_lines = [
                 "TEST MODE",
                 f"Image {i+1}/{num_images}",
+                "",
+                f"Size: {width}x{height}",
+                f"Format: {img_format}",
                 "",
                 f"Prompt: {prompt[:30]}...",
                 "",
@@ -299,14 +315,15 @@ def runpod_simulate(
                 "Production: Real image here"
             ]
             
-            y_position = 50
+            y_position = height // 20  # Start at 5% of height
+            line_height = height // 20  # 5% spacing between lines
             for line in text_lines:
-                draw.text((30, y_position), line, fill=(255, 255, 255))
-                y_position += 40
+                draw.text((width // 20, y_position), line, fill=(255, 255, 255))
+                y_position += line_height
             
-            # Save to bytes
+            # Save to bytes with requested format
             img_byte_arr = io.BytesIO()
-            img.save(img_byte_arr, format='PNG')
+            img.save(img_byte_arr, format=img_format)
             img_bytes = img_byte_arr.getvalue()
             
             # Run AWS Rekognition check (Layer 3)
