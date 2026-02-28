@@ -270,7 +270,13 @@ def runpod_simulate(
     user_id = input_data.get("user_id", str(current_user.id))
     num_images = input_data.get("image_number", 1)
     size = input_data.get("size", "1024x1024")
-    img_format = input_data.get("format", "png").upper()
+    requested_format = str(input_data.get("format", "png")).lower()
+    if requested_format == "jpg":
+        img_format = "JPEG"
+        response_format = "jpg"
+    else:
+        img_format = "PNG"
+        response_format = "png"
     
     # Parse size (e.g., "1536x640" -> width=1536, height=640)
     try:
@@ -285,7 +291,7 @@ def runpod_simulate(
     print(f"   Prompt: {prompt[:100]}...")
     print(f"   Images: {num_images}")
     print(f"   Size: {width}x{height}")
-    print(f"   Format: {img_format}")
+    print(f"   Format: {response_format}")
     
     # Generate mock images (in production, Fooocus would generate these)
     images = []
@@ -305,7 +311,7 @@ def runpod_simulate(
                 f"Image {i+1}/{num_images}",
                 "",
                 f"Size: {width}x{height}",
-                f"Format: {img_format}",
+                f"Format: {response_format}",
                 "",
                 f"Prompt: {prompt[:30]}...",
                 "",
@@ -345,7 +351,7 @@ def runpod_simulate(
             
             # Convert to base64 for response
             img_base64 = base64.b64encode(img_bytes).decode('utf-8')
-            images.append(f"data:image/png;base64,{img_base64}")
+            images.append(img_base64)
             
             print(f"   ✓ Image {i+1} ready for delivery")
             
@@ -361,7 +367,9 @@ def runpod_simulate(
         "output": {
             "images": images,
             "progress": 100,
-            "message": f"Generated {len(images)} image(s) (TEST MODE with AWS safety checks)"
+            "message": f"Generated {len(images)} image(s) (TEST MODE with AWS safety checks)",
+            "format": response_format,
+            "size": f"{width}x{height}"
         }
     }
     
