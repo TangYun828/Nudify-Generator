@@ -10,6 +10,7 @@ Implements dual-layer watermarking:
 import io
 import base64
 import json
+import os
 from pathlib import Path
 from PIL import Image
 from cryptography.hazmat.primitives import serialization, hashes
@@ -33,10 +34,15 @@ class ComplianceWatermark:
         """
         Initialize watermarking system
         
+        Priority for loading credentials:
+          1. C2PA_PRIVATE_KEY_BASE64 & C2PA_CERT_BASE64 env vars (production)
+          2. Files at private_key_path & cert_path (development)
+          3. Warn if neither available (test mode)
+        
         Args:
             org_name: Organization name for manifest
-            private_key_path: Path to C2PA private key
-            cert_path: Path to C2PA certificate
+            private_key_path: Path to C2PA private key (fallback)
+            cert_path: Path to C2PA certificate (fallback)
         """
         self.org_name = org_name
         self.private_key_path = private_key_path
@@ -46,8 +52,20 @@ class ComplianceWatermark:
         # Load private key if available
         self.private_key = None
         self.certificate = None
-        if Path(private_key_path).exists() and Path(cert_path).exists():
+        
+        # Try environment variables first (production)
+        key_b64 = os.getenv('C2PA_PRIVATE_KEY_BASE64')
+        cert_b64 = os.getenv('C2PA_CERT_BASE64')
+        
+        if key_b64 and cert_b64:
+            self._load_from_base64(key_b64, cert_b64)
+        elif Path(private_key_path).exists() and Path(cert_path).exists():
             self._load_credentials()
+        else:
+            logger.warning(
+                "⚠ C2PA credentials not found. "
+                "Set C2PA_PRIVATE_KEY_BASE64 & C2PA_CERT_BASE64 or provide .pem files."
+            )
     
     def _load_credentials(self):
         """Load C2PA credentials from files"""
@@ -60,9 +78,30 @@ class ComplianceWatermark:
                 )
             with open(self.cert_path, "rb") as f:
                 self.certificate = f.read().decode('utf-8')
-            logger.info("✓ C2PA credentials loaded successfully")
+            logger.info("✓ C2PA credentials loaded from files")
         except Exception as e:
-            logger.warning(f"⚠ Could not load C2PA credentials: {e}")
+            logger.warning(f"⚠ Could not load C2PA credentials from files: {e}")
+    
+    def _load_from_base64(self, key_b64: str, cert_b64: str):
+        """Load C2PA credentials from base64-encoded environment variables"""
+        try:
+            # Decode from base64
+            key_pem = base64.b64decode(key_b64).decode('utf-8')
+            cert_pem = base64.b64decode(cert_b64).decode('utf-8')
+            
+            # Load private key
+            self.private_key = serialization.load_pem_private_key(
+                key_pem.encode(),
+                password=None,
+                backend=default_backend()
+            )
+            
+            # Store certificate
+            self.certificate = cert_pem
+            
+            logger.info("✓ C2PA credentials loaded from environment variables")
+        except Exception as e:
+            logger.warning(f"⚠ Could not load C2PA credentials from environment: {e}")
     
     def apply_latent_watermark(self, image_bytes: bytes, site_id: str = None) -> bytes:
         """
