@@ -336,21 +336,32 @@ def handler(event):
         negative_prompt = job_input.get("negative_prompt", "")
         base_model = job_input.get("base_model_name", "onlyfornsfw118_v20.safetensors")
         output_format = job_input.get("output_format", "png").lower()
-        aspect_ratio = job_input.get("aspect_ratios_selection", "1024*1024")
+        aspect_ratio = job_input.get("aspect_ratios_selection", "832*1216")  # Optimized for portraits
+        
+        # Hardcoded safety negative prompt (backend-enforced)
+        safety_negative = "child, underage, loli, shota, toddler, baby, infant, minor, deformed, low quality, blurry, watermark"
+        full_negative_prompt = f"{negative_prompt}, {safety_negative}" if negative_prompt else safety_negative
         
         print(f"Generating {num_images} image(s): {prompt[:50]}...")
         
-        # Call Fooocus API
+        # Call Fooocus API with optimized quality parameters
+        # Key insight: style_selections is the "secret" to matching UI quality
         payload = {
             "prompt": prompt,
-            "negative_prompt": negative_prompt,
+            "negative_prompt": full_negative_prompt,
             "base_model_name": base_model,
             "aspect_ratios_selection": aspect_ratio,
             "image_number": int(num_images),
             "output_format": output_format,
             "async_process": False,
             "stream_output": False,
-            "performance_selection": "Quality"
+            
+            # Core quality settings (matching Fooocus UI)
+            "performance_selection": "Quality",  # 60 steps for paid tier
+            "style_selections": ["Fooocus V2", "Fooocus Enhance", "Fooocus Sharp"],  # Critical for quality!
+            "sharpness": job_input.get("sharpness", 2.0),  # 2.0-5.0 for HD look
+            "guidance_scale": job_input.get("guidance_scale", 4.0),  # 4.0 for realistic skin tones
+            "image_seed": job_input.get("image_seed", -1)  # -1 for random
         }
         
         response = requests.post(
