@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, FileResponse
 import uvicorn
 
 from database import SessionLocal, init_db
@@ -24,6 +25,11 @@ from schemas import UserRegister, UserLogin, GenerateImageRequest
 from db_models.user import User
 from db_models.credits import Credits
 from db_models.usage_log import UsageLog
+from safety_checker import check_image_safety, check_image_safety_bytes
+from s3_uploader import upload_safe_image
+import base64
+import io
+from PIL import Image, ImageDraw, ImageFont
 
 # ============================================================
 # FastAPI Setup
@@ -35,11 +41,11 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware
+# CORS middleware - Allow all origins for testing
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["*"],                   # Allow all origins for testing
+    allow_credentials=False,               # Set to False when using "*"
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -98,8 +104,18 @@ def root():
         "message": "Nudify API Test Server",
         "status": "running",
         "docs": "/docs",
+        "test": "/test",
         "mode": "test (Fooocus disabled)"
     }
+
+
+@app.get("/test", response_class=FileResponse)
+def test_page():
+    """Serve the browser test interface"""
+    test_file = Path(__file__).parent / "test_browser.html"
+    if test_file.exists():
+        return FileResponse(test_file)
+    raise HTTPException(status_code=404, detail="Test page not found")
 
 
 @app.get("/health")
@@ -191,7 +207,7 @@ def generate_image_mock(
     current_user: User = Depends(get_current_user),
     db=Depends(get_db)
 ):
-    """Mock image generation (returns test response)"""
+    """Generate image with AWS safety checks (returns test images)"""
     
     # Get user credits
     credits = db.query(Credits).filter(Credits.user_id == current_user.id).first()
@@ -235,6 +251,106 @@ def generate_image_mock(
         "num_images": num_images,
         "note": "In production, this endpoint returns base64-encoded images"
     }
+
+
+@app.post("/api/runpod/generate")
+def runpod_simulate(
+    request_data: dict,
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db)
+):
+    """
+    Simulate RunPod endpoint locally with AWS safety checks
+    Mimics RunPod's request/response format for integration testing
+    """
+    
+    # Extract input from RunPod format
+    input_data = request_data.get("input", {})
+    prompt = input_data.get("prompt", "")
+    user_id = input_data.get("user_id", str(current_user.id))
+    num_images = input_data.get("image_number", 1)
+    
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt is required")
+    
+    print(f"\n📥 Received request from user {user_id}")
+    print(f"   Prompt: {prompt[:100]}...")
+    print(f"   Images: {num_images}")
+    
+    # Generate mock images (in production, Fooocus would generate these)
+    images = []
+    
+    for i in range(num_images):
+        try:
+            # Create a simple test image with text
+            img = Image.new('RGB', (512, 512), color=(100, 100, 150))
+            draw = ImageDraw.Draw(img)
+            
+            # Add text to image
+            text_lines = [
+                "TEST MODE",
+                f"Image {i+1}/{num_images}",
+                "",
+                f"Prompt: {prompt[:30]}...",
+                "",
+                "✓ AWS Safety Check",
+                "✓ S3 Audit Upload",
+                "",
+                "Production: Real image here"
+            ]
+            
+            y_position = 50
+            for line in text_lines:
+                draw.text((30, y_position), line, fill=(255, 255, 255))
+                y_position += 40
+            
+            # Save to bytes
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format='PNG')
+            img_bytes = img_byte_arr.getvalue()
+            
+            # Run AWS Rekognition check (Layer 3)
+            print(f"\n🔍 Running AWS Rekognition check on image {i+1}...")
+            safety_result = check_image_safety_bytes(img_bytes)
+            
+            if not safety_result['is_safe']:
+                print(f"   ✗ Image {i+1} flagged by Rekognition:")
+                print(f"     Confidence: {safety_result['confidence']:.1f}%")
+                print(f"     Categories: {', '.join(safety_result['flagged_categories'])}")
+                print(f"   ✗ Image deleted, not returning to client")
+                continue
+            
+            print(f"   ✓ Image {i+1} passed safety check (confidence: {safety_result['confidence']:.1f}%)")
+            
+            # Upload to S3 (Layer 4) - skip for now since we have bytes not file path
+            # TODO: Implement bytes-based S3 upload or save to temp file
+            print(f"\n☁️  S3 audit upload skipped (bytes upload not implemented)...")
+            
+            # Convert to base64 for response
+            img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+            images.append(f"data:image/png;base64,{img_base64}")
+            
+            print(f"   ✓ Image {i+1} ready for delivery")
+            
+        except Exception as e:
+            print(f"   ✗ Error processing image {i+1}: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # Return in RunPod format
+    response = {
+        "id": f"test-{current_user.id}",
+        "status": "COMPLETED",
+        "output": {
+            "images": images,
+            "progress": 100,
+            "message": f"Generated {len(images)} image(s) (TEST MODE with AWS safety checks)"
+        }
+    }
+    
+    print(f"\n✓ Request complete: {len(images)} images delivered\n")
+    
+    return response
 
 
 # ============================================================

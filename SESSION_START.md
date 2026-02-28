@@ -76,6 +76,48 @@ Docs complete in nudify-backend:
 - Supabase project creation may still be pending.
 - Frontend login/register pages are not built yet.
 
+## ARCHITECTURE DECISION UPDATE (Feb 27, 2026)
+
+**Decision: Switched to Hybrid Serverless Architecture (Option 3)**
+
+New implementation plan:
+- **Frontend**: Next.js (nudify-app-nextjs) instead of Vue
+  - Already built with full auth UI (login/register/app pages)
+  - Pushed to GitHub: https://github.com/TangYun828/nudify_us-website.git
+  - Will deploy to Vercel
+
+- **Backend**: Vercel serverless functions (Next.js API routes)
+  - Auth/credits endpoints as API routes in Next.js app
+  - Port existing FastAPI logic from nudify-backend
+  - No always-on server needed
+
+- **Database**: Supabase PostgreSQL (as originally planned)
+  - Schema already designed in nudify-backend
+  - Tables: users, credits, usage_logs, age_verifications
+
+- **Image Generation**: RunPod serverless endpoint
+  - Called only when generating images
+  - Backend proxies requests (keeps API key secure)
+  - Pay-per-use GPU costs
+
+**Status of Nudify-Generator repo:**
+- Will NOT merge nudify-backend code here
+- This repo stays as-is for RunPod image generation only
+- Backend auth/credits now handled by Vercel serverless
+
+**Why this architecture:**
+- Most cost-effective (no idle GPU costs)
+- Fully scalable (Vercel Edge + RunPod serverless)
+- Next.js preferred over Vue for modern stack
+- No container management needed
+
+**Next Steps:**
+1. Set up Supabase project (or use Vercel Postgres)
+2. Port auth/credits logic to Next.js API routes
+3. Add RunPod proxy endpoint
+4. Update frontend API client to use /api instead of external URL
+5. Deploy to Vercel with environment variables
+
 ## Current Status (To Confirm)
 
 Pending tasks likely still open:

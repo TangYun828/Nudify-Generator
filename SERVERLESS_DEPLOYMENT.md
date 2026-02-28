@@ -1,6 +1,17 @@
 # RunPod Serverless Deployment Guide
 
-## Overview
+⚠️ **DEPRECATED:** This guide is outdated.  
+**Use the comprehensive guide instead:** [RUNPOD_DEPLOYMENT_GUIDE.md](RUNPOD_DEPLOYMENT_GUIDE.md)
+
+The new guide includes:
+- Complete Docker build instructions
+- AWS safety integration setup
+- Automated build scripts
+- Testing utilities
+
+---
+
+## Overview (Legacy)
 This guide covers deploying the Fooocus handler as a RunPod serverless endpoint to serve app.html requests.
 
 ## Prerequisites

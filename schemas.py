@@ -220,3 +220,25 @@ class UsageLogResponse(BaseModel):
                 "completed_at": "2026-02-26T10:31:00"
             }
         }
+
+
+# =======================
+# Image Generation Schemas
+# =======================
+
+class GenerateImageRequest(BaseModel):
+    """Schema for image generation request"""
+    prompt: str = Field(..., min_length=1, max_length=2000)
+    negative_prompt: Optional[str] = Field(None, max_length=2000)
+    image_number: Optional[int] = Field(1, ge=1, le=4)
+    style: Optional[str] = None
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "prompt": "beautiful landscape with mountains",
+                "negative_prompt": "blur, low quality",
+                "image_number": 1,
+                "style": "realistic"
+            }
+        }

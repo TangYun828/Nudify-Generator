@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nudify API Test Interface</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        
+        .subtitle {
+            color: rgba(255, 255, 255, 0.9);
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+        
+        .status-bar {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 10px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-label {
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .status-value {
+            color: #667eea;
+            font-weight: 700;
+        }
+        
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .card h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .response {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            display: none;
+        }
+        
+        .response.show {
+            display: block;
+        }
+        
+        .response.success {
+            background: #d1fae5;
+            border: 2px solid #10b981;
+            color: #065f46;
+        }
+        
+        .response.error {
+            background: #fee2e2;
+            border: 2px solid #ef4444;
+            color: #991b1b;
+        }
+        
+        .token-display {
+            background: #f3f4f6;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            word-break: break-all;
+            font-size: 12px;
+            display: none;
+        }
+        
+        .token-display.show {
+            display: block;
+        }
+        
+        .link-button {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 8px 15px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        
+        .link-button:hover {
+            background: #5568d3;
+        }
+        
+        .info {
+            background: #dbeafe;
+            border: 2px solid #3b82f6;
+            color: #1e40af;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        
+        .info strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Nudify API Test Interface</h1>
+        <div class="subtitle">Interactive Testing for Authentication & Credits System</div>
+        
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="status-indicator"></div>
+                <span class="status-label">API Server:</span>
+                <span class="status-value" id="serverStatus">Checking...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">User:</span>
+                <span class="status-value" id="currentUser">Not logged in</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Credits:</span>
+                <span class="status-value" id="currentCredits">--</span>
+            </div>
+        </div>
+        
+        <div class="info">
+            <strong>📖 Instructions:</strong>
+            1. Register a new user or use existing credentials<br>
+            2. Login to get your JWT token (stored automatically)<br>
+            3. Use authenticated endpoints (Profile, Credits, Generate)<br>
+            4. Swagger UI: <a href="http://localhost:8000/docs" target="_blank" style="color: #1e40af;">http://localhost:8000/docs</a>
+        </div>
+        
+        <div class="grid">
+            <!-- Health Check -->
+            <div class="card">
+                <h2>🏥 Health Check</h2>
+                <button onclick="checkHealth()">Check API Health</button>
+                <div id="healthResponse" class="response"></div>
+            </div>
+            
+            <!-- Register -->
+            <div class="card">
+                <h2>👤 Register New User</h2>
+                <div class="form-group">
+                    <label>Email:</label>
+                    <input type="email" id="regEmail" placeholder="user@example.com" value="test@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Username:</label>
+                    <input type="text" id="regUsername" placeholder="username" value="testuser">
+                </div>
+                <div class="form-group">
+                    <label>Password:</label>
+                    <input type="password" id="regPassword" placeholder="min 8 characters" value="Pass123!">
+                </div>
+                <button onclick="register()">Register</button>
+                <div id="regResponse" class="response"></div>
+            </div>
+            
+            <!-- Login -->
+            <div class="card">
+                <h2>🔐 Login</h2>
+                <div class="form-group">
+                    <label>Email:</label>
+                    <input type="email" id="loginEmail" placeholder="user@example.com" value="test@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Password:</label>
+                    <input type="password" id="loginPassword" placeholder="password" value="Pass123!">
+                </div>
+                <button onclick="login()">Login</button>
+                <div id="loginResponse" class="response"></div>
+                <div id="tokenDisplay" class="token-display"></div>
+            </div>
+            
+            <!-- Profile -->
+            <div class="card">
+                <h2>👨‍💼 Get Profile</h2>
+                <p style="color: #666; margin-bottom: 15px;">Requires authentication token from login</p>
+                <button onclick="getProfile()">Get My Profile</button>
+                <div id="profileResponse" class="response"></div>
+            </div>
+            
+            <!-- Credits -->
+            <div class="card">
+                <h2>💰 Check Credits</h2>
+                <p style="color: #666; margin-bottom: 15px;">View your current credit balance</p>
+                <button onclick="getCredits()">Check Balance</button>
+                <div id="creditsResponse" class="response"></div>
+            </div>
+            
+            <!-- Generate Image -->
+            <div class="card">
+                <h2>🎨 Generate Image (Mock)</h2>
+                <div class="form-group">
+                    <label>Prompt:</label>
+                    <textarea id="prompt" rows="3" placeholder="A beautiful sunset over mountains">A beautiful portrait</textarea>
+                </div>
+                <div class="form-group">
+                    <label>Number of Images:</label>
+                    <input type="number" id="imageNumber" min="1" max="4" value="1">
+                </div>
+                <button onclick="generateImage()">Generate (Uses 1 Credit per Image)</button>
+                <div id="generateResponse" class="response"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        let authToken = null;
+        
+        // Check server on load
+        window.addEventListener('load', checkHealth);
+        
+        async function checkHealth() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                showResponse('healthResponse', data, true);
+                document.getElementById('serverStatus').textContent = '✓ Online';
+                document.getElementById('serverStatus').style.color = '#10b981';
+            } catch (error) {
+                showResponse('healthResponse', { error: error.message }, false);
+                document.getElementById('serverStatus').textContent = '✗ Offline';
+                document.getElementById('serverStatus').style.color = '#ef4444';
+            }
+        }
+        
+        async function register() {
+            const email = document.getElementById('regEmail').value;
+            const username = document.getElementById('regUsername').value;
+            const password = document.getElementById('regPassword').value;
+            
+            if (!email || !username || !password) {
+                showResponse('regResponse', { error: 'All fields required' }, false);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, username, password })
+                });
+                
+                const data = await response.json();
+                showResponse('regResponse', data, response.ok);
+                
+                if (response.ok) {
+                    // Auto-fill login form
+                    document.getElementById('loginEmail').value = email;
+                    document.getElementById('loginPassword').value = password;
+                }
+            } catch (error) {
+                showResponse('regResponse', { error: error.message }, false);
+            }
+        }
+        
+        async function login() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            if (!email || !password) {
+                showResponse('loginResponse', { error: 'Email and password required' }, false);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                showResponse('loginResponse', data, response.ok);
+                
+                if (response.ok && data.access_token) {
+                    authToken = data.access_token;
+                    document.getElementById('tokenDisplay').textContent = `Token: ${authToken.substring(0, 50)}...`;
+                    document.getElementById('tokenDisplay').classList.add('show');
+                    document.getElementById('currentUser').textContent = email;
+                    
+                    // Auto-fetch profile and credits
+                    setTimeout(() => {
+                        getProfile();
+                        getCredits();
+                    }, 500);
+                }
+            } catch (error) {
+                showResponse('loginResponse', { error: error.message }, false);
+            }
+        }
+        
+        async function getProfile() {
+            if (!authToken) {
+                showResponse('profileResponse', { error: 'Please login first' }, false);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/user/profile`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                const data = await response.json();
+                showResponse('profileResponse', data, response.ok);
+                
+                if (response.ok && data.credits !== undefined) {
+                    document.getElementById('currentCredits').textContent = data.credits;
+                }
+            } catch (error) {
+                showResponse('profileResponse', { error: error.message }, false);
+            }
+        }
+        
+        async function getCredits() {
+            if (!authToken) {
+                showResponse('creditsResponse', { error: 'Please login first' }, false);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/credits/balance`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                const data = await response.json();
+                showResponse('creditsResponse', data, response.ok);
+                
+                if (response.ok && data.balance !== undefined) {
+                    document.getElementById('currentCredits').textContent = data.balance;
+                }
+            } catch (error) {
+                showResponse('creditsResponse', { error: error.message }, false);
+            }
+        }
+        
+        async function generateImage() {
+            if (!authToken) {
+                showResponse('generateResponse', { error: 'Please login first' }, false);
+                return;
+            }
+            
+            const prompt = document.getElementById('prompt').value;
+            const image_number = parseInt(document.getElementById('imageNumber').value);
+            
+            if (!prompt) {
+                showResponse('generateResponse', { error: 'Prompt required' }, false);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/generate/image`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ prompt, image_number })
+                });
+                
+                const data = await response.json();
+                showResponse('generateResponse', data, response.ok);
+                
+                if (response.ok) {
+                    // Update credits display
+                    if (data.credits_remaining !== undefined) {
+                        document.getElementById('currentCredits').textContent = data.credits_remaining;
+                    }
+                    
+                    // Auto-refresh credits
+                    setTimeout(getCredits, 500);
+                }
+            } catch (error) {
+                showResponse('generateResponse', { error: error.message }, false);
+            }
+        }
+        
+        function showResponse(elementId, data, success) {
+            const element = document.getElementById(elementId);
+            element.textContent = JSON.stringify(data, null, 2);
+            element.className = `response show ${success ? 'success' : 'error'}`;
+        }
+    </script>
+</body>
+</html>
