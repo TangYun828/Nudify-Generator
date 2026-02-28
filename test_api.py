@@ -270,6 +270,8 @@ def runpod_simulate(
     user_id = input_data.get("user_id", str(current_user.id))
     num_images = input_data.get("image_number", 1)
     size = input_data.get("size", "1024x1024")
+    watermark_enabled = bool(input_data.get("watermark", False))
+    watermark_text = str(input_data.get("watermark_text", "AI GENERATED"))
     requested_format = str(input_data.get("format", "png")).lower()
     if requested_format == "jpg":
         img_format = "JPEG"
@@ -292,6 +294,7 @@ def runpod_simulate(
     print(f"   Images: {num_images}")
     print(f"   Size: {width}x{height}")
     print(f"   Format: {response_format}")
+    print(f"   Watermark: {'ON' if watermark_enabled else 'OFF'}")
     
     # Generate mock images (in production, Fooocus would generate these)
     images = []
@@ -326,6 +329,26 @@ def runpod_simulate(
             for line in text_lines:
                 draw.text((width // 20, y_position), line, fill=(255, 255, 255))
                 y_position += line_height
+
+            # Apply visible watermark when requested
+            if watermark_enabled:
+                watermark_font_size = max(18, min(width, height) // 20)
+                watermark_padding = max(16, watermark_font_size // 2)
+                approx_char_width = max(8, watermark_font_size // 2)
+                watermark_box_width = (len(watermark_text) * approx_char_width) + (watermark_padding * 2)
+                watermark_box_height = watermark_font_size + (watermark_padding * 2)
+                box_x = max(0, width - watermark_box_width - watermark_padding)
+                box_y = max(0, height - watermark_box_height - watermark_padding)
+
+                draw.rectangle(
+                    [box_x, box_y, box_x + watermark_box_width, box_y + watermark_box_height],
+                    fill=(0, 0, 0)
+                )
+                draw.text(
+                    (box_x + watermark_padding, box_y + watermark_padding),
+                    watermark_text,
+                    fill=(255, 255, 255)
+                )
             
             # Save to bytes with requested format
             img_byte_arr = io.BytesIO()
