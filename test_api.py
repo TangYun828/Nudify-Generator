@@ -38,7 +38,7 @@ import hashlib
 # ============================================================
 
 app = FastAPI(
-    title="Nudify API (Test Mode)",
+    title="IntimAI API (Test Mode)",
     description="NSFW Image Generation API - Testing Authentication",
     version="1.0.0"
 )
@@ -103,7 +103,7 @@ def get_current_user(
 def root():
     """API root endpoint"""
     return {
-        "message": "Nudify API Test Server",
+        "message": "IntimAI API Test Server",
         "status": "running",
         "docs": "/docs",
         "test": "/test",
@@ -399,7 +399,7 @@ def runpod_simulate(
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("Nudify API Test Server")
+    print("IntimAI API Test Server")
     print("=" * 60)
     print("Mode: Testing (Fooocus disabled)")
     print("Initializing database...")
