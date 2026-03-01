@@ -334,7 +334,7 @@ def handler(event):
         user_id = job_input.get("user_id", "unknown")  # Extract user_id for audit trail
         num_images = job_input.get("image_number") or job_input.get("num_images", 1)
         negative_prompt = job_input.get("negative_prompt", "")
-        base_model = job_input.get("base_model_name", "onlyfornsfw118_v20.safetensors")
+        base_model = "onlyfornsfw118_v20.safetensors"
         output_format = job_input.get("output_format", "png").lower()
         aspect_ratio = job_input.get("aspect_ratios_selection", "832*1216")  # Optimized for portraits
         
