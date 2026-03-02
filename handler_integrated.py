@@ -385,6 +385,12 @@ def generate_image(
         )
     
     try:
+        # Extract Fooocus parameters
+        performance_selection = getattr(request_data, 'performance_selection', None) or "Speed"
+        style_selections = getattr(request_data, 'style_selections', None) or ["Fooocus V2", "Fooocus Enhance", "Fooocus Sharp"]
+        sharpness = getattr(request_data, 'sharpness', None) or 2.0
+        guidance_scale = getattr(request_data, 'guidance_scale', None) or 4.0
+        
         # Call Fooocus API
         payload = {
             "prompt": request_data.prompt,
@@ -395,7 +401,10 @@ def generate_image(
             "output_format": (request_data.output_format or "png").lower(),
             "async_process": False,
             "stream_output": False,
-            "performance_selection": "Quality"
+            "performance_selection": performance_selection,
+            "style_selections": style_selections,
+            "sharpness": sharpness,
+            "guidance_scale": guidance_scale
         }
         
         response = requests.post(
@@ -533,6 +542,12 @@ def handler(event):
             if not credits or credits.balance < total_cost:
                 return {"error": "Insufficient credits", "progress": 0}
             
+            # Extract Fooocus parameters
+            performance_selection = job_input.get("performance_selection", "Speed")
+            style_selections = job_input.get("style_selections", ["Fooocus V2", "Fooocus Enhance", "Fooocus Sharp"])
+            sharpness = job_input.get("sharpness", 2.0)
+            guidance_scale = job_input.get("guidance_scale", 4.0)
+            
             # Call Fooocus API
             payload = {
                 "prompt": prompt,
@@ -543,7 +558,10 @@ def handler(event):
                 "output_format": job_input.get("output_format", "png").lower(),
                 "async_process": False,
                 "stream_output": False,
-                "performance_selection": "Quality"
+                "performance_selection": performance_selection,
+                "style_selections": style_selections,
+                "sharpness": sharpness,
+                "guidance_scale": guidance_scale
             }
             
             response = requests.post(

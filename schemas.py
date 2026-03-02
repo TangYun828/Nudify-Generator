@@ -233,12 +233,25 @@ class GenerateImageRequest(BaseModel):
     image_number: Optional[int] = Field(1, ge=1, le=4)
     style: Optional[str] = None
     
+    # Fooocus API parameters
+    performance_selection: Optional[str] = Field("Speed", description="Speed, Quality, Lightning, etc.")
+    style_selections: Optional[list[str]] = Field(None, description="Fooocus styles like ['Fooocus V2', 'Fooocus Enhance']")
+    sharpness: Optional[float] = Field(2.0, ge=0.0, le=30.0, description="Image sharpness 0-30")
+    guidance_scale: Optional[float] = Field(4.0, ge=1.0, le=30.0, description="CFG scale 1-30")
+    base_model_name: Optional[str] = None
+    aspect_ratio: Optional[str] = None
+    output_format: Optional[str] = None
+    
     class Config:
         json_schema_extra = {
             "example": {
                 "prompt": "beautiful landscape with mountains",
                 "negative_prompt": "blur, low quality",
                 "image_number": 1,
-                "style": "realistic"
+                "style": "realistic",
+                "performance_selection": "Speed",
+                "style_selections": ["Fooocus V2", "Fooocus Enhance"],
+                "sharpness": 2.0,
+                "guidance_scale": 4.0
             }
         }
