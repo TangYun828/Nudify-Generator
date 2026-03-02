@@ -273,6 +273,15 @@ def runpod_simulate(
     num_images = input_data.get("image_number", 1)
     size = input_data.get("size", "1024x1024")
     requested_format = str(input_data.get("format", "png")).lower()
+    
+    # Extract Fooocus-API parameters
+    style_selections = input_data.get("style_selections", [])
+    performance_selection = input_data.get("performance_selection", "Speed")
+    sharpness = input_data.get("sharpness", 2.0)
+    guidance_scale = input_data.get("guidance_scale", 4.0)
+    sampler_name = input_data.get("sampler_name", "dpmpp_2m_sde_gpu")
+    scheduler_name = input_data.get("scheduler_name", "karras")
+    
     if requested_format == "jpg":
         img_format = "JPEG"
         response_format = "jpg"
@@ -295,7 +304,15 @@ def runpod_simulate(
     print(f"   Size: {width}x{height}")
     print(f"   Format: {response_format}")
     print(f"   Watermark: {'ON' if watermark_enabled else 'OFF'}")
-    these)
+    print(f"   📊 Fooocus Parameters:")
+    print(f"      Performance: {performance_selection}")
+    print(f"      Styles: {', '.join(style_selections) if style_selections else 'None'}")
+    print(f"      Sharpness: {sharpness}")
+    print(f"      Guidance Scale: {guidance_scale}")
+    print(f"      Sampler: {sampler_name}")
+    print(f"      Scheduler: {scheduler_name}")
+    
+    # Generate test images with safety checks
     images = []
     
     for i in range(num_images):
