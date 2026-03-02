@@ -342,7 +342,18 @@ def handler(event):
         safety_negative = "child, underage, loli, shota, toddler, baby, infant, minor, deformed, low quality, blurry, watermark"
         full_negative_prompt = f"{negative_prompt}, {safety_negative}" if negative_prompt else safety_negative
         
+        # Extract Fooocus parameters (with defaults)
+        performance_selection = job_input.get("performance_selection", "Speed")
+        style_selections = job_input.get("style_selections", ["Fooocus V2", "Fooocus Enhance", "Fooocus Sharp"])
+        sharpness = job_input.get("sharpness", 2.0)
+        guidance_scale = job_input.get("guidance_scale", 4.0)
+        
         print(f"Generating {num_images} image(s): {prompt[:50]}...")
+        print(f"📊 Parameters:")
+        print(f"   Performance: {performance_selection}")
+        print(f"   Styles: {', '.join(style_selections) if isinstance(style_selections, list) else style_selections}")
+        print(f"   Sharpness: {sharpness}")
+        print(f"   Guidance: {guidance_scale}")
         
         # Call Fooocus API with optimized quality parameters
         # Key insight: style_selections is the "secret" to matching UI quality
@@ -356,11 +367,11 @@ def handler(event):
             "async_process": False,
             "stream_output": False,
             
-            # Core quality settings (matching Fooocus UI)
-            "performance_selection": "Quality",  # 60 steps for paid tier
-            "style_selections": ["Fooocus V2", "Fooocus Enhance", "Fooocus Sharp"],  # Critical for quality!
-            "sharpness": job_input.get("sharpness", 2.0),  # 2.0-5.0 for HD look
-            "guidance_scale": job_input.get("guidance_scale", 4.0),  # 4.0 for realistic skin tones
+            # Core quality settings (matching Fooocus UI) - from request or defaults
+            "performance_selection": performance_selection,  # Speed=30 steps, Quality=60 steps
+            "style_selections": style_selections,  # Critical for quality!
+            "sharpness": sharpness,  # 2.0-5.0 for HD look
+            "guidance_scale": guidance_scale,  # 4.0 for realistic skin tones
             "image_seed": job_input.get("image_seed", -1)  # -1 for random
         }
         
